@@ -138,7 +138,7 @@ export function ratings(draft: DraftState): Ratings {
 
 // ---------- rolling ----------
 
-/** strength weights: stronger squads appear more often (0.25..1) */
+/** strength weights: stronger squads appear more often (0.15..1, quadratic) */
 function squadWeights(pool: Squad[]): Map<SquadKey, number> {
   const avgs = pool.map(s => ({
     key: squadKey(s.sel, s.copa),
@@ -148,7 +148,7 @@ function squadWeights(pool: Squad[]): Map<SquadKey, number> {
   const min = Math.min(...vals);
   const range = Math.max(...vals) - min || 1;
   const map = new Map<SquadKey, number>();
-  for (const a of avgs) map.set(a.key, 0.25 + 0.75 * ((a.avg - min) / range));
+  for (const a of avgs) map.set(a.key, 0.15 + 0.85 * ((a.avg - min) / range) ** 2);
   return map;
 }
 

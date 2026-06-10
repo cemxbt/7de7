@@ -24,6 +24,80 @@ const countAgg = (names: string[]): string => {
   return [...m].map(([n, c]) => (c > 1 ? `${n} (${c})` : n)).join(', ');
 };
 
+// ---------- group draw ceremony ----------
+
+function GroupDraw({ group, lang, onDone }: {
+  group: { sel: string; copa: number }[];
+  lang: Lang;
+  onDone: () => void;
+}) {
+  const [revealed, setRevealed] = useState(0); // 0..4 rows
+  const rows = [null, ...group]; // null = you
+
+  useEffect(() => {
+    if (revealed >= rows.length) return;
+    const timer = setTimeout(() => setRevealed(r => r + 1), revealed === 0 ? 600 : 850);
+    return () => clearTimeout(timer);
+  }, [revealed, rows.length]);
+
+  const done = revealed >= rows.length;
+
+  return (
+    <div className="group-draw">
+      <div className="gd-title">🎱 {t('drawTitle', lang)}</div>
+      <div className="gd-sub">{t('yourGroup', lang)}</div>
+      <div className="gd-rows">
+        {rows.map((r, i) => {
+          const shown = i < revealed;
+          const c = r ? COUNTRIES[r.sel] : null;
+          return (
+            <div key={i} className={`gd-row ${shown ? 'shown' : ''} ${r === null ? 'me' : ''}`}>
+              <span className="gd-ball">{shown ? '⚪' : '🔵'}</span>
+              <span className="gd-name">
+                {shown ? (r === null ? `⭐ ${t('yourTeam', lang)}` : `${c?.flag ?? ''} ${c ? c[lang] : r.sel} ${r.copa}`) : '· · ·'}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+      {done && (
+        <button className="cta gd-start" onClick={onDone}>⚽ {t('startMatches', lang)}</button>
+      )}
+    </div>
+  );
+}
+
+// ---------- confetti ----------
+
+const CONFETTI_COLORS = ['#e8b923', '#3aa655', '#d33', '#3a7bd5', '#e87f23', '#9b59b6'];
+
+function Confetti() {
+  const pieces = useMemo(() =>
+    Array.from({ length: 36 }, (_, i) => ({
+      left: Math.random() * 100,
+      delay: Math.random() * 2.2,
+      dur: 2.6 + Math.random() * 2,
+      color: CONFETTI_COLORS[i % CONFETTI_COLORS.length],
+      rot: Math.random() * 360,
+    })), []);
+  return (
+    <div className="confetti" aria-hidden="true">
+      {pieces.map((p, i) => (
+        <span
+          key={i}
+          style={{
+            left: `${p.left}%`,
+            animationDelay: `${p.delay}s`,
+            animationDuration: `${p.dur}s`,
+            background: p.color,
+            transform: `rotate(${p.rot}deg)`,
+          }}
+        />
+      ))}
+    </div>
+  );
+}
+
 // ---------- live match ----------
 
 const EV_ICON: Record<MatchEvent['type'], string> = {
@@ -121,6 +195,7 @@ function LiveMatch({ f, lang, onDone, speed, onSpeed, auto, onStopAuto }: LivePr
   const shown = events.filter(e => e.min <= minute);
   const gf = shown.filter(e => isGoal(e) && !e.opp).length;
   const ga = shown.filter(e => isGoal(e) && e.opp).length;
+  const goalNow = phase === 'play' && minute < 90 && events.find(e => e.min === minute && isGoal(e));
 
   const c = COUNTRIES[f.oppSel];
   const oppLabel = `${c?.flag ?? ''} ${c ? c[lang] : f.oppSel} ${f.oppCopa}`;
@@ -153,6 +228,11 @@ function LiveMatch({ f, lang, onDone, speed, onSpeed, auto, onStopAuto }: LivePr
 
   return (
     <div className="live-match">
+      {goalNow && (
+        <div className={`goal-banner ${goalNow.opp ? 'opp' : ''}`} key={`${goalNow.min}-${goalNow.player}`}>
+          {goalNow.opp ? `🥅 ${goalNow.player}` : `⚽ ${t('goalBanner', lang)}`}
+        </div>
+      )}
       <div className="lm-stage">{t(STAGE_KEY[f.stage], lang)}</div>
       <div className="lm-board">
         <span className="lm-team me">⭐ {t('yourTeam', lang)}</span>
@@ -246,6 +326,15 @@ function FixtureCard({ f, lang, final }: { f: Fixture; lang: Lang; final: boolea
           {yellows.length > 0 && <span>🟨 ×{yellows.length}</span>}
         </div>
       )}
+      {f.other && (() => {
+        const a = COUNTRIES[f.other!.aSel];
+        const b = COUNTRIES[f.other!.bSel];
+        return (
+          <div className="fx-other">
+            ⚔ {t('otherMatch', lang)}: {a?.flag} {a ? a[lang] : f.other.aSel} <b>{f.other.ga}–{f.other.gb}</b> {b?.flag} {b ? b[lang] : f.other.bSel}
+          </div>
+        );
+      })()}
     </div>
   );
 }
@@ -258,8 +347,9 @@ const loadSpeed = (): Speed => {
 };
 
 export default function Reveal({ lang, result, draft, onPlayAgain, onDonate }: Props) {
+  const [drawDone, setDrawDone] = useState(false);
   const [step, setStep] = useState(0); // completed fixtures
-  const [live, setLive] = useState(true); // first match kicks off immediately
+  const [live, setLive] = useState(false); // kicks off after the group draw
   const [auto, setAuto] = useState(false);
   const [speed, setSpeedState] = useState<Speed>(loadSpeed);
   const [copied, setCopied] = useState(false);
@@ -267,7 +357,8 @@ export default function Reveal({ lang, result, draft, onPlayAgain, onDonate }: P
   const finished = step >= total;
   const playing = !finished && live;
   const visible = result.campaign.slice(0, step);
-  const g3 = visible.find(f => f.stage === 'G3');
+  const latestTable = [...visible].reverse().find(f => f.groupTable);
+  const inKnockout = visible.some(f => !f.group) || (playing && !result.campaign[step].group);
 
   const xi = draft.filled.filter((p): p is PlacedPlayer => p !== null);
 
@@ -324,6 +415,14 @@ export default function Reveal({ lang, result, draft, onPlayAgain, onDonate }: P
 
   return (
     <main className="reveal">
+      {!drawDone && (
+        <GroupDraw
+          group={result.group}
+          lang={lang}
+          onDone={() => { setDrawDone(true); setLive(true); }}
+        />
+      )}
+
       <div className="fixture-list">
         {visible.map((f, i) => (
           <FixtureCard key={i} f={f} lang={lang} final={f.stage === 'F'} />
@@ -343,18 +442,18 @@ export default function Reveal({ lang, result, draft, onPlayAgain, onDonate }: P
         />
       )}
 
-      {g3?.groupTable && (
+      {latestTable?.groupTable && (!inKnockout || finished) && (
         <div className="card table-card">
-          <h2>{t('groupTable', lang)}</h2>
+          <h2>{t('groupTable', lang)} {!finished && <small className="table-round">{t(STAGE_KEY[latestTable.stage], lang)}</small>}</h2>
           <table className="standings">
             <thead>
               <tr><th></th><th>P</th><th>+/-</th><th>⚽</th></tr>
             </thead>
             <tbody>
-              {g3.groupTable.map((r, i) => {
+              {latestTable.groupTable.map((r, i) => {
                 const c = r.sel ? COUNTRIES[r.sel] : null;
                 return (
-                  <tr key={i} className={r.me ? 'you-row' : ''}>
+                  <tr key={i} className={`${r.me ? 'you-row' : ''} ${i < 2 ? 'q-row' : ''}`}>
                     <td>{r.me ? `⭐ ${t('yourTeam', lang)}` : `${c?.flag ?? ''} ${c ? c[lang] : r.sel} ${r.copa}`}</td>
                     <td>{r.pts}</td>
                     <td>{r.gd > 0 ? '+' : ''}{r.gd}</td>
@@ -367,7 +466,7 @@ export default function Reveal({ lang, result, draft, onPlayAgain, onDonate }: P
         </div>
       )}
 
-      {!finished && !playing && !auto && (
+      {drawDone && !finished && !playing && !auto && (
         <div className="sim-controls">
           <button className="cta" onClick={() => setLive(true)}>
             {t('next', lang)} →
@@ -391,6 +490,7 @@ export default function Reveal({ lang, result, draft, onPlayAgain, onDonate }: P
 
       {finished && (
         <div className={`result-card ${result.champion ? 'gold' : ''}`}>
+          {result.champion && <Confetti />}
           <div className="rc-seed">{t('seedLbl', lang, { seed: result.seed })}</div>
 
           {result.perfect ? (

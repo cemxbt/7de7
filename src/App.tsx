@@ -11,6 +11,8 @@ import Setup from './components/Setup';
 import Draft from './components/Draft';
 import Reveal from './components/Reveal';
 import Donate from './components/Donate';
+import ProfileScreen from './components/ProfileScreen';
+import { loadHistory, loadProfile, pushHistory, type HistoryEntry, type Profile } from './profile';
 
 export interface Stats {
   played: number;
@@ -32,7 +34,9 @@ type Theme = 'light' | 'dark';
 export default function App() {
   const [lang, setLang] = useState<Lang>(() => (localStorage.getItem('7de7-lang') as Lang) || 'en');
   const [theme, setTheme] = useState<Theme>(() => (localStorage.getItem('7de7-theme') as Theme) || 'light');
-  const [screen, setScreen] = useState<'setup' | 'draft' | 'reveal'>('setup');
+  const [screen, setScreen] = useState<'setup' | 'draft' | 'reveal' | 'profile'>('setup');
+  const [profile, setProfile] = useState<Profile>(loadProfile);
+  const [history, setHistory] = useState<HistoryEntry[]>(loadHistory);
   const [squads, setSquads] = useState<Squad[] | null>(null);
   const [loadError, setLoadError] = useState(false);
 
@@ -77,6 +81,7 @@ export default function App() {
     };
     setStats(next);
     localStorage.setItem('7de7-stats', JSON.stringify(next));
+    setHistory(pushHistory(res, draft.mode, draft.formation));
     setFinalDraft(draft);
     setResult(res);
     setScreen('reveal');
@@ -91,6 +96,14 @@ export default function App() {
           <span className="logo-7">7</span>
         </button>
         <div className="topbar-controls">
+          <button
+            className={`profile-btn ${screen === 'profile' ? 'on' : ''}`}
+            onClick={() => setScreen(screen === 'profile' ? 'setup' : 'profile')}
+            aria-label={t('profile', lang)}
+          >
+            <span className="profile-btn-avatar">{profile.avatar}</span>
+            {profile.name && <span className="profile-btn-name">{profile.name}</span>}
+          </button>
           <div className="lang-switch">
             <button className={lang === 'en' ? 'on' : ''} onClick={() => switchLang('en')}>EN</button>
             <button className={lang === 'tr' ? 'on' : ''} onClick={() => switchLang('tr')}>TR</button>
@@ -128,6 +141,18 @@ export default function App() {
           squads={squads}
           initialGame={game}
           onSimulate={startTournament}
+          onBack={() => setScreen('setup')}
+        />
+      )}
+
+      {squads && screen === 'profile' && (
+        <ProfileScreen
+          lang={lang}
+          profile={profile}
+          setProfile={setProfile}
+          history={history}
+          setHistory={setHistory}
+          stats={stats}
           onBack={() => setScreen('setup')}
         />
       )}

@@ -317,6 +317,15 @@ export interface GroupRow {
   gf: number;
 }
 
+export interface OtherMatch {
+  aSel: string;
+  aCopa: number;
+  bSel: string;
+  bCopa: number;
+  ga: number;
+  gb: number;
+}
+
 export interface Fixture {
   stage: Stage;
   group: boolean;
@@ -334,6 +343,7 @@ export interface Fixture {
   goals: GoalEvent[];
   events: MatchEvent[];
   groupTable?: GroupRow[];
+  other?: OtherMatch;
 }
 
 export type Badge = 'CRUSHER' | 'WALL' | null;
@@ -351,41 +361,13 @@ export interface CampaignResult {
   attack: number;
   defense: number;
   campaign: Fixture[];
+  group: { sel: string; copa: number }[]; // the 3 group-stage rivals, in draw order
   badge: Badge;
   seed: string;
 }
 
-function groupStandings(
-  rng: Rng, myResults: MatchScore[], oppOveralls: number[],
-): { rows: { me: boolean; oppIndex: number; pts: number; gd: number; gf: number }[]; advanced: boolean } {
-  const mine = {
-    me: true, oppIndex: -1,
-    pts: myResults.reduce((a, r) => a + (r.outcome === 'W' ? 3 : r.outcome === 'D' ? 1 : 0), 0),
-    gd: myResults.reduce((a, r) => a + (r.gf - r.ga), 0),
-    gf: myResults.reduce((a, r) => a + r.gf, 0),
-  };
-  const others = oppOveralls.map((_, i) => {
-    const r = myResults[i];
-    return {
-      me: false, oppIndex: i,
-      pts: r.outcome === 'L' ? 3 : r.outcome === 'D' ? 1 : 0,
-      gd: r.ga - r.gf,
-      gf: r.ga,
-    };
-  });
-  for (let i = 0; i < oppOveralls.length; i++) {
-    for (let j = i + 1; j < oppOveralls.length; j++) {
-      const r = playMatch(rng, oppOveralls[i], oppOveralls[i], oppOveralls[j]);
-      if (r.outcome === 'W') others[i].pts += 3;
-      else if (r.outcome === 'D') { others[i].pts += 1; others[j].pts += 1; }
-      else others[j].pts += 3;
-      others[i].gd += r.gf - r.ga; others[i].gf += r.gf;
-      others[j].gd += r.ga - r.gf; others[j].gf += r.ga;
-    }
-  }
-  const rows = [mine, ...others].sort((a, b) => b.pts - a.pts || b.gd - a.gd || b.gf - a.gf);
-  return { rows, advanced: rows.findIndex(r => r.me) < 2 };
-}
+// the other group match each round (opponent indices): G1 -> 1v2, G2 -> 0v2, G3 -> 0v1
+const OTHER_PAIR: [number, number][] = [[1, 2], [0, 2], [0, 1]];
 
 export function simulateCampaign(draft: DraftState, seed: string, all: Squad[]): CampaignResult {
   const upper = seed.toUpperCase();
@@ -408,7 +390,12 @@ export function simulateCampaign(draft: DraftState, seed: string, all: Squad[]):
   let eliminated = false;
   let oppIdx = 0;
 
-  const groupScores: MatchScore[] = [];
+  // cumulative group standings: row 0 = me, rows 1..3 = group rivals
+  const groupRows = [
+    { me: true, oppIndex: -1, pts: 0, gd: 0, gf: 0 },
+    ...[0, 1, 2].map(i => ({ me: false, oppIndex: i, pts: 0, gd: 0, gf: 0 })),
+  ];
+  const groupOveralls = PHASES.filter(p => p.group).map(p => p.overall);
 
   for (const phase of PHASES) {
     if (eliminated) break;
@@ -430,22 +417,43 @@ export function simulateCampaign(draft: DraftState, seed: string, all: Squad[]):
       if (score.outcome === 'W') wins++;
       else if (score.outcome === 'D') draws++;
       else losses++;
-      groupScores.push(score);
+
+      // my result into the table
+      groupRows[0].pts += score.outcome === 'W' ? 3 : score.outcome === 'D' ? 1 : 0;
+      groupRows[0].gd += score.gf - score.ga;
+      groupRows[0].gf += score.gf;
+      const myOpp = groupRows[1 + matchIndex];
+      myOpp.pts += score.outcome === 'L' ? 3 : score.outcome === 'D' ? 1 : 0;
+      myOpp.gd += score.ga - score.gf;
+      myOpp.gf += score.ga;
+
+      // the parallel match of this round
+      const [ai, bi] = OTHER_PAIR[matchIndex];
+      const o = playMatch(matchRng, groupOveralls[ai], groupOveralls[ai], groupOveralls[bi]);
+      const ra = groupRows[1 + ai], rb = groupRows[1 + bi];
+      if (o.outcome === 'W') ra.pts += 3;
+      else if (o.outcome === 'D') { ra.pts += 1; rb.pts += 1; }
+      else rb.pts += 3;
+      ra.gd += o.gf - o.ga; ra.gf += o.gf;
+      rb.gd += o.ga - o.gf; rb.gf += o.ga;
+
+      const sorted = [...groupRows].sort((a, b) => b.pts - a.pts || b.gd - a.gd || b.gf - a.gf);
       const fixture: Fixture = {
         stage: phase.stage, group: true, oppOverall: phase.overall,
         oppSel: identity.sel, oppCopa: identity.copa,
         gf: score.gf, ga: score.ga, outcome: score.outcome,
         advanced: true, scorers, conceded, goals, events,
+        other: {
+          aSel: opponents[ai].sel, aCopa: opponents[ai].copa,
+          bSel: opponents[bi].sel, bCopa: opponents[bi].copa,
+          ga: o.gf, gb: o.ga,
+        },
+        groupTable: sorted.map(r => r.me
+          ? { me: true, pts: r.pts, gd: r.gd, gf: r.gf }
+          : { me: false, pts: r.pts, gd: r.gd, gf: r.gf, sel: opponents[r.oppIndex]?.sel, copa: opponents[r.oppIndex]?.copa }),
       };
       campaign.push(fixture);
-      if (phase.stage === 'G3') {
-        const oppOveralls = PHASES.filter(p => p.group).map(p => p.overall);
-        const { rows, advanced } = groupStandings(matchRng, groupScores, oppOveralls);
-        fixture.groupTable = rows.map(r => r.me
-          ? { me: true, pts: r.pts, gd: r.gd, gf: r.gf }
-          : { me: false, pts: r.pts, gd: r.gd, gf: r.gf, sel: opponents[r.oppIndex]?.sel, copa: opponents[r.oppIndex]?.copa });
-        if (!advanced) eliminated = true;
-      }
+      if (phase.stage === 'G3' && sorted.findIndex(r => r.me) >= 2) eliminated = true;
       continue;
     }
 
@@ -501,6 +509,6 @@ export function simulateCampaign(draft: DraftState, seed: string, all: Squad[]):
     champion, perfect, wins, draws, losses,
     gf: gfTotal, ga: gaTotal,
     overall, attack, defense,
-    campaign, badge, seed: upper,
+    campaign, group: opponents.slice(0, 3), badge, seed: upper,
   };
 }

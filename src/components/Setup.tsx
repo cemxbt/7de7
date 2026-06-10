@@ -1,7 +1,7 @@
-import { FORMATION_NAMES, type FormationName } from '../data/formations';
+import { FORMATIONS, FORMATION_NAMES, type FormationName } from '../data/formations';
 import type { Mode, Style } from '../game/types';
 import type { Lang, StringKey } from '../i18n';
-import { t } from '../i18n';
+import { POS_LABEL, t } from '../i18n';
 import type { Stats } from '../App';
 
 interface Props {
@@ -76,6 +76,23 @@ export default function Setup({ lang, mode, setMode, formation, setFormation, st
             >
               {f}
             </button>
+          ))}
+        </div>
+        <div className="mini-pitch" aria-hidden="true">
+          <div className="mini-lines">
+            <div className="mini-circle" />
+            <div className="mini-halfway" />
+            <div className="mini-box top" />
+            <div className="mini-box bottom" />
+          </div>
+          {FORMATIONS[formation][style].map((s, i) => (
+            <span
+              key={`${formation}-${style}-${i}`}
+              className={`mini-dot ${s.pos === 'GK' ? 'gk' : ''}`}
+              style={{ left: `${s.x}%`, top: `${s.y}%` }}
+            >
+              {POS_LABEL[s.pos][lang]}
+            </span>
           ))}
         </div>
       </section>
