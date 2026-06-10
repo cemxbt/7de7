@@ -77,6 +77,7 @@ for (let i = 0; i < N; i++) {
   for (const f of res.campaign) {
     if (f.scorers.length !== f.gf) throw new Error('scorer count mismatch');
     if (!COUNTRIES[f.oppSel]) throw new Error('bad opponent sel ' + f.oppSel);
+    if (mode === 'wc2026' && f.oppCopa !== 2026) throw new Error('wc2026 rival from wrong year: ' + f.oppSel + ' ' + f.oppCopa);
     // event timeline must agree with the score
     matches++;
     const evGoals = f.events.filter(e => e.type === 'goal' || e.type === 'pengoal');

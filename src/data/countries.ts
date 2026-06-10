@@ -260,5 +260,90 @@ export const COUNTRIES: Record<string, Country> = {
     "en": "Wales",
     "tr": "Galler",
     "flag": "🏴󠁧󠁢󠁷󠁬󠁳󠁿"
+  },
+  "RSA": {
+    "en": "South Africa",
+    "tr": "Güney Afrika",
+    "flag": "🇿🇦"
+  },
+  "CAN": {
+    "en": "Canada",
+    "tr": "Kanada",
+    "flag": "🇨🇦"
+  },
+  "BIH": {
+    "en": "Bosnia and Herzegovina",
+    "tr": "Bosna-Hersek",
+    "flag": "🇧🇦"
+  },
+  "QAT": {
+    "en": "Qatar",
+    "tr": "Katar",
+    "flag": "🇶🇦"
+  },
+  "HAI": {
+    "en": "Haiti",
+    "tr": "Haiti",
+    "flag": "🇭🇹"
+  },
+  "CUW": {
+    "en": "Curaçao",
+    "tr": "Curaçao",
+    "flag": "🇨🇼"
+  },
+  "TUN": {
+    "en": "Tunisia",
+    "tr": "Tunus",
+    "flag": "🇹🇳"
+  },
+  "IRN": {
+    "en": "Iran",
+    "tr": "İran",
+    "flag": "🇮🇷"
+  },
+  "NZL": {
+    "en": "New Zealand",
+    "tr": "Yeni Zelanda",
+    "flag": "🇳🇿"
+  },
+  "CPV": {
+    "en": "Cape Verde",
+    "tr": "Yeşil Burun Adaları",
+    "flag": "🇨🇻"
+  },
+  "KSA": {
+    "en": "Saudi Arabia",
+    "tr": "Suudi Arabistan",
+    "flag": "🇸🇦"
+  },
+  "IRQ": {
+    "en": "Iraq",
+    "tr": "Irak",
+    "flag": "🇮🇶"
+  },
+  "NOR": {
+    "en": "Norway",
+    "tr": "Norveç",
+    "flag": "🇳🇴"
+  },
+  "JOR": {
+    "en": "Jordan",
+    "tr": "Ürdün",
+    "flag": "🇯🇴"
+  },
+  "COD": {
+    "en": "DR Congo",
+    "tr": "DR Kongo",
+    "flag": "🇨🇩"
+  },
+  "UZB": {
+    "en": "Uzbekistan",
+    "tr": "Özbekistan",
+    "flag": "🇺🇿"
+  },
+  "PAN": {
+    "en": "Panama",
+    "tr": "Panama",
+    "flag": "🇵🇦"
   }
 };

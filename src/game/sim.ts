@@ -271,22 +271,22 @@ function simShootout(rng: Rng, iWin: boolean, mine: Player[], theirs: Player[]):
 
 // ---------- opponent identities (real historical squads by strength band) ----------
 
-const SORTED_BANDS: Band[] = [...BANDS].sort((a, b) => a.band - b.band);
-const ELIM_POOL: Band[] = BANDS.filter(b => b.band >= 84);
-const N = SORTED_BANDS.length;
-const BUCKET = N / 7;
-const OVERLAP = 0.6 * BUCKET;
+const BANDS_2026: Band[] = BANDS.filter(b => b.copa === 2026);
 const bandKey = (b: { sel: string; copa: number }) => `${b.sel}:${b.copa}`;
 
 /** 7 real squads, weakest band bucket to strongest, weighted to stronger within window */
-export function pickOpponents(rng: Rng, exclude: Set<string>): { sel: string; copa: number }[] {
+export function pickOpponents(rng: Rng, exclude: Set<string>, source: Band[] = BANDS): { sel: string; copa: number }[] {
+  const sorted = [...source].sort((a, b) => a.band - b.band);
+  const n7 = sorted.length;
+  const bucket = n7 / 7;
+  const overlap = 0.6 * bucket;
   const used = new Set<string>();
   const out: { sel: string; copa: number }[] = [];
   for (let n = 0; n < 7; n++) {
-    const center = (n + 0.5) * BUCKET;
-    const from = Math.max(0, Math.floor(center - BUCKET / 2 - OVERLAP));
-    const to = Math.min(N, Math.ceil(center + BUCKET / 2 + OVERLAP));
-    const window = SORTED_BANDS.slice(from, to);
+    const center = (n + 0.5) * bucket;
+    const from = Math.max(0, Math.floor(center - bucket / 2 - overlap));
+    const to = Math.min(n7, Math.ceil(center + bucket / 2 + overlap));
+    const window = sorted.slice(from, to);
     let cands = window.filter(b => !used.has(bandKey(b)) && !exclude.has(bandKey(b)));
     if (cands.length === 0) cands = window.filter(b => !used.has(bandKey(b)));
     if (cands.length === 0) cands = window;
@@ -298,9 +298,10 @@ export function pickOpponents(rng: Rng, exclude: Set<string>): { sel: string; co
   return out;
 }
 
-function pickEliminator(rng: Rng, exclude: Set<string>): { sel: string; copa: number } {
-  let pool = ELIM_POOL.filter(b => !exclude.has(bandKey(b)));
-  if (pool.length === 0) pool = ELIM_POOL;
+function pickEliminator(rng: Rng, exclude: Set<string>, source: Band[] = BANDS): { sel: string; copa: number } {
+  const elims = source.filter(b => b.band >= 84);
+  let pool = elims.filter(b => !exclude.has(bandKey(b)));
+  if (pool.length === 0) pool = elims;
   const b = pick(rng, pool);
   return { sel: b.sel, copa: b.copa };
 }
@@ -392,7 +393,9 @@ export function simulateCampaign(draft: DraftState, seed: string, all: Squad[]):
   const xi = draft.filled.filter((p): p is PlacedPlayer => p !== null);
   const draftedFrom = new Set(xi.map(p => `${p.sel}:${p.copa}`));
 
-  const opponents = pickOpponents(rngFromSeed(`${upper}:opp`), draftedFrom);
+  // WC 2026 mode is a closed universe: rivals come from the 48 real participants only
+  const bandSource = draft.mode === 'wc2026' ? BANDS_2026 : BANDS;
+  const opponents = pickOpponents(rngFromSeed(`${upper}:opp`), draftedFrom, bandSource);
   const oppSquad = (sel: string, copa: number): Player[] =>
     all.find(s => s.sel === sel && s.copa === copa)?.squad ?? [];
 
@@ -478,7 +481,7 @@ export function simulateCampaign(draft: DraftState, seed: string, all: Squad[]):
     const lastIdx = idx >= 0 ? idx : campaign.length - 1;
     const fixture = campaign[lastIdx];
     const exclude = new Set([...draftedFrom, ...opponents.map(bandKey)]);
-    const elim = pickEliminator(rngFromSeed(`${upper}:elim`), exclude);
+    const elim = pickEliminator(rngFromSeed(`${upper}:elim`), exclude, bandSource);
     const elimSquad = oppSquad(elim.sel, elim.copa);
     if (elimSquad.length > 0 && !fixture.group) {
       fixture.oppSel = elim.sel;

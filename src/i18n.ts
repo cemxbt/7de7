@@ -15,7 +15,7 @@ const STRINGS = {
   modeHardcore: { tr: 'Hardcore', en: 'Hardcore' },
   modeHardcoreDesc: { tr: 'Joker yok · ilk zar son zar', en: 'No wildcards · every roll counts' },
   mode2026: { tr: 'Kupa 2026', en: 'WC 2026' },
-  mode2026Desc: { tr: 'Sadece 2026 Dünya Kupası kadroları!', en: 'Only 2026 World Cup squads!' },
+  mode2026Desc: { tr: 'Gerçek 48 katılımcı — kadrolar da rakipler de sadece 2026!', en: 'All 48 real participants — squads and rivals are 2026 only!' },
   formation: { tr: 'Diziliş', en: 'Formation' },
   style: { tr: 'Oyun Stili', en: 'Play Style' },
   styleDef: { tr: 'Defansif', en: 'Defensive' },
