@@ -13,6 +13,7 @@ import Reveal from './components/Reveal';
 import Donate from './components/Donate';
 import ProfileScreen from './components/ProfileScreen';
 import { loadHistory, loadProfile, pushHistory, type HistoryEntry, type Profile } from './profile';
+import { insertCampaign, supabase, syncLocalHistoryOnce, upsertCloudProfile, type User } from './online';
 
 export interface Stats {
   played: number;
@@ -37,6 +38,7 @@ export default function App() {
   const [screen, setScreen] = useState<'setup' | 'draft' | 'reveal' | 'profile'>('setup');
   const [profile, setProfile] = useState<Profile>(loadProfile);
   const [history, setHistory] = useState<HistoryEntry[]>(loadHistory);
+  const [user, setUser] = useState<User | null>(null);
   const [squads, setSquads] = useState<Squad[] | null>(null);
   const [loadError, setLoadError] = useState(false);
 
@@ -53,6 +55,21 @@ export default function App() {
   useEffect(() => {
     loadSquads().then(setSquads).catch(() => setLoadError(true));
   }, []);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => setUser(data.session?.user ?? null));
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+    });
+    return () => sub.subscription.unsubscribe();
+  }, []);
+
+  // first login: push pre-account local history & profile to the cloud
+  useEffect(() => {
+    if (!user) return;
+    syncLocalHistoryOnce(user.id, loadHistory()).catch(() => { /* offline */ });
+    upsertCloudProfile(user.id, loadProfile()).catch(() => { /* offline */ });
+  }, [user]);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -81,7 +98,9 @@ export default function App() {
     };
     setStats(next);
     localStorage.setItem('7de7-stats', JSON.stringify(next));
-    setHistory(pushHistory(res, draft.mode, draft.formation));
+    const list = pushHistory(res, draft.mode, draft.formation);
+    setHistory(list);
+    if (user && list[0]) insertCampaign(user.id, list[0]).catch(() => { /* offline */ });
     setFinalDraft(draft);
     setResult(res);
     setScreen('reveal');
@@ -153,6 +172,7 @@ export default function App() {
           history={history}
           setHistory={setHistory}
           stats={stats}
+          user={user}
           onBack={() => setScreen('setup')}
         />
       )}
