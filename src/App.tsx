@@ -10,6 +10,7 @@ import { t } from './i18n';
 import Setup from './components/Setup';
 import Draft from './components/Draft';
 import Reveal from './components/Reveal';
+import Donate from './components/Donate';
 
 export interface Stats {
   played: number;
@@ -39,6 +40,7 @@ export default function App() {
   const [formation, setFormation] = useState<FormationName>('4-3-3');
   const [style, setStyle] = useState<Style>('balanced');
 
+  const [donateOpen, setDonateOpen] = useState(false);
   const [game, setGame] = useState<GameState | null>(null);
   const [result, setResult] = useState<CampaignResult | null>(null);
   const [finalDraft, setFinalDraft] = useState<DraftState | null>(null);
@@ -140,11 +142,16 @@ export default function App() {
       )}
 
       <footer className="footer">
+        <button className="donate-btn" onClick={() => setDonateOpen(true)}>
+          ☕ {t('donate', lang)}
+        </button>
         <span>7'de 7 — Dream World Cup · 1950–2026</span>
         <span className="made-by">
           made by <a href="https://github.com/cemxbt" target="_blank" rel="noopener noreferrer">cemxbt</a>
         </span>
       </footer>
+
+      {donateOpen && <Donate lang={lang} onClose={() => setDonateOpen(false)} />}
     </div>
   );
 }

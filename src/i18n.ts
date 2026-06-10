@@ -78,6 +78,18 @@ const STRINGS = {
   share: { tr: 'Sonucu Paylaş', en: 'Share Result' },
   copied: { tr: 'Panoya kopyalandı!', en: 'Copied to clipboard!' },
   topScorer: { tr: 'Gol Kralın', en: 'Top Scorer' },
+  // donate
+  donate: { tr: 'Destek Ol', en: 'Donate' },
+  donateTitle: { tr: 'Oyunu Beğendin mi?', en: 'Enjoying the Game?' },
+  donateDesc: {
+    tr: 'Bu oyun tamamen ücretsiz ve reklamsız. Destek olmak istersen aşağıdaki kripto cüzdan adreslerinden bağış yapabilirsin. Adrese dokun, kopyalansın.',
+    en: 'This game is completely free with no ads. If you want to support it, you can donate to the crypto wallets below. Tap an address to copy it.',
+  },
+  donateCopy: { tr: 'Kopyala', en: 'Copy' },
+  donateNote: {
+    tr: '⚠️ Göndermeden önce adresi ve ağı mutlaka kontrol et.',
+    en: '⚠️ Always double-check the address and network before sending.',
+  },
   // stats
   stats: { tr: 'İstatistiklerin', en: 'Your Stats' },
   statPlayed: { tr: 'Oyun', en: 'Played' },
