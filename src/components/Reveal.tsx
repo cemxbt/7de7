@@ -45,40 +45,75 @@ function evText(e: MatchEvent, lang: Lang): string {
 
 const isGoal = (e: MatchEvent) => e.type === 'goal' || e.type === 'pengoal';
 
-function LiveMatch({ f, lang, onDone }: { f: Fixture; lang: Lang; onDone: () => void }) {
+export type Speed = 'slow' | 'normal' | 'fast';
+const SPEED_MULT: Record<Speed, number> = { slow: 1.9, normal: 1, fast: 0.3 };
+
+interface LiveProps {
+  f: Fixture;
+  lang: Lang;
+  onDone: () => void;
+  speed: Speed;
+  onSpeed: (s: Speed) => void;
+  auto: boolean;
+  onStopAuto: () => void;
+}
+
+function SpeedSeg({ speed, onSpeed, lang }: { speed: Speed; onSpeed: (s: Speed) => void; lang: Lang }) {
+  const opts: { v: Speed; icon: string; key: StringKey }[] = [
+    { v: 'slow', icon: '🐢', key: 'speedSlow' },
+    { v: 'normal', icon: '▶', key: 'speedNormal' },
+    { v: 'fast', icon: '⚡', key: 'speedFast' },
+  ];
+  return (
+    <div className="speed-seg" role="group">
+      {opts.map(o => (
+        <button
+          key={o.v}
+          className={speed === o.v ? 'active' : ''}
+          onClick={() => onSpeed(o.v)}
+          title={t(o.key, lang)}
+        >
+          {o.icon} <span className="speed-lbl">{t(o.key, lang)}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function LiveMatch({ f, lang, onDone, speed, onSpeed, auto, onStopAuto }: LiveProps) {
   const events = f.events ?? [];
   const pens = f.pens;
   const [minute, setMinute] = useState(0);
-  const [fast, setFast] = useState(false);
   const [phase, setPhase] = useState<'play' | 'pens' | 'over'>('play');
   const [kicks, setKicks] = useState(0);
-  const fastRef = useRef(fast);
-  fastRef.current = fast;
+  const speedRef = useRef(speed);
+  speedRef.current = speed;
 
   const meKicks = pens ? [...pens.me, ...(pens.sd?.me ?? [])] : [];
   const themKicks = pens ? [...pens.them, ...(pens.sd?.them ?? [])] : [];
   const totalKicks = meKicks.length + themKicks.length;
 
   useEffect(() => {
+    const wait = (base: number) => Math.max(16, base * SPEED_MULT[speedRef.current]);
     if (phase === 'play') {
       if (minute >= 90) {
-        const timer = setTimeout(() => setPhase(pens ? 'pens' : 'over'), 1000);
+        const timer = setTimeout(() => setPhase(pens ? 'pens' : 'over'), wait(1000));
         return () => clearTimeout(timer);
       }
       const cur = events.filter(e => e.min === minute);
       const base = cur.some(isGoal) ? 1300 : cur.length > 0 ? 750 : minute === 45 ? 1000 : 78;
-      const timer = setTimeout(() => setMinute(m => m + 1), fastRef.current ? Math.max(20, base / 4) : base);
+      const timer = setTimeout(() => setMinute(m => m + 1), wait(base));
       return () => clearTimeout(timer);
     }
     if (phase === 'pens') {
       if (kicks >= totalKicks) {
-        const timer = setTimeout(() => setPhase('over'), 1100);
+        const timer = setTimeout(() => setPhase('over'), wait(1100));
         return () => clearTimeout(timer);
       }
-      const timer = setTimeout(() => setKicks(k => k + 1), fastRef.current ? 180 : 700);
+      const timer = setTimeout(() => setKicks(k => k + 1), wait(700));
       return () => clearTimeout(timer);
     }
-    const timer = setTimeout(onDone, 650);
+    const timer = setTimeout(onDone, wait(650));
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase, minute, kicks]);
@@ -159,8 +194,9 @@ function LiveMatch({ f, lang, onDone }: { f: Fixture; lang: Lang; onDone: () => 
       </div>
 
       <div className="lm-controls">
-        <button className={`ghost small ${fast ? 'active' : ''}`} onClick={() => setFast(v => !v)}>⏩ 4×</button>
+        <SpeedSeg speed={speed} onSpeed={onSpeed} lang={lang} />
         <button className="ghost small" onClick={onDone}>{t('skipMatch', lang)} →</button>
+        {auto && <button className="ghost small" onClick={onStopAuto}>⏸ {t('stopAuto', lang)}</button>}
       </div>
     </div>
   );
@@ -216,9 +252,16 @@ function FixtureCard({ f, lang, final }: { f: Fixture; lang: Lang; final: boolea
 
 // ---------- reveal ----------
 
+const loadSpeed = (): Speed => {
+  const s = localStorage.getItem('7de7-speed');
+  return s === 'slow' || s === 'fast' ? s : 'normal';
+};
+
 export default function Reveal({ lang, result, draft, onPlayAgain, onDonate }: Props) {
   const [step, setStep] = useState(0); // completed fixtures
   const [live, setLive] = useState(true); // first match kicks off immediately
+  const [auto, setAuto] = useState(false);
+  const [speed, setSpeedState] = useState<Speed>(loadSpeed);
   const [copied, setCopied] = useState(false);
   const total = result.campaign.length;
   const finished = step >= total;
@@ -228,10 +271,22 @@ export default function Reveal({ lang, result, draft, onPlayAgain, onDonate }: P
 
   const xi = draft.filled.filter((p): p is PlacedPlayer => p !== null);
 
+  const setSpeed = (s: Speed) => {
+    setSpeedState(s);
+    localStorage.setItem('7de7-speed', s);
+  };
+
   const matchDone = () => {
     setLive(false);
     setStep(s => s + 1);
   };
+
+  // auto mode: kick off the next match after a short breather
+  useEffect(() => {
+    if (!auto || live || finished) return;
+    const timer = setTimeout(() => setLive(true), 900);
+    return () => clearTimeout(timer);
+  }, [auto, live, finished]);
 
   const topScorer = useMemo(() => {
     const counts = new Map<string, number>();
@@ -276,7 +331,16 @@ export default function Reveal({ lang, result, draft, onPlayAgain, onDonate }: P
       </div>
 
       {playing && (
-        <LiveMatch key={step} f={result.campaign[step]} lang={lang} onDone={matchDone} />
+        <LiveMatch
+          key={step}
+          f={result.campaign[step]}
+          lang={lang}
+          onDone={matchDone}
+          speed={speed}
+          onSpeed={setSpeed}
+          auto={auto}
+          onStopAuto={() => setAuto(false)}
+        />
       )}
 
       {g3?.groupTable && (
@@ -303,14 +367,25 @@ export default function Reveal({ lang, result, draft, onPlayAgain, onDonate }: P
         </div>
       )}
 
-      {!finished && !playing && (
+      {!finished && !playing && !auto && (
         <div className="sim-controls">
           <button className="cta" onClick={() => setLive(true)}>
             {t('next', lang)} →
           </button>
           {step + 1 < total && (
-            <button className="ghost" onClick={() => { setStep(total); setLive(false); }}>⏩ {t('autoSim', lang)}</button>
+            <button className="ghost" onClick={() => { setAuto(true); setLive(true); }}>▶▶ {t('autoSim', lang)}</button>
           )}
+          {step + 1 < total && (
+            <button className="ghost" onClick={() => { setStep(total); setLive(false); setAuto(false); }}>⏩ {t('skipAll', lang)}</button>
+          )}
+        </div>
+      )}
+
+      {!finished && !playing && auto && (
+        <div className="sim-controls">
+          <div className="auto-wait">
+            <span className="auto-dot" /><span className="auto-dot" /><span className="auto-dot" />
+          </div>
         </div>
       )}
 
