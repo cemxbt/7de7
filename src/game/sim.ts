@@ -96,6 +96,96 @@ function buildGoals(rng: Rng, myScorers: string[], oppScorers: string[]): GoalEv
   ].sort((a, b) => a.min - b.min);
 }
 
+// ---------- match events (narrative layer: cards, penalties, drama) ----------
+
+export type MatchEventType = 'goal' | 'pengoal' | 'penmiss' | 'yellow' | 'red' | 'post' | 'save' | 'miss';
+export interface MatchEvent { min: number; type: MatchEventType; opp: boolean; player: string }
+
+const CARD_W: Record<string, number> = { GK: 0.08, DEF: 1, DM: 1, MID: 0.55, AM: 0.4, ATT: 0.32 };
+const cardWeight = (p: Player) => Math.max(...p.pos.map(pos => CARD_W[POS_GROUP[pos]] ?? 0.5));
+
+/**
+ * Generates the in-match storyline around the already-decided goals:
+ * some goals become penalties, occasional missed pens, yellow/red cards
+ * (second yellow always after the first), woodwork/save/miss drama.
+ * Uses its own RNG stream so scores stay seed-compatible.
+ */
+function buildEvents(rng: Rng, goals: GoalEvent[], mine: Player[], theirs: Player[]): MatchEvent[] {
+  const events: MatchEvent[] = [];
+  const used = new Set(goals.map(g => g.min));
+  const freeMin = (after = 1) => {
+    for (let i = 0; i < 60; i++) {
+      const m = after + Math.floor(rng() * (91 - after));
+      if (m >= 1 && m <= 90 && !used.has(m)) { used.add(m); return m; }
+    }
+    return Math.min(90, after + 1);
+  };
+
+  // some goals were penalties
+  for (const g of goals) {
+    const pen = rng() < 0.1;
+    events.push({ min: g.min, type: pen ? 'pengoal' : 'goal', opp: g.opp, player: g.scorer });
+  }
+
+  // occasional missed penalty
+  for (const opp of [false, true]) {
+    if (rng() < 0.07) {
+      const squad = opp ? theirs : mine;
+      if (squad.length > 0) {
+        const taker = pickWeighted(rng, squad, squad.map(scorerWeight));
+        events.push({ min: freeMin(), type: 'penmiss', opp, player: taker.n });
+      }
+    }
+  }
+
+  // yellow cards; a second yellow for the same player becomes a red
+  const booked = new Map<string, number>(); // "side:name" -> minute of first yellow
+  const nYellow = Math.min(6, poisson(rng, 1.7));
+  for (let i = 0; i < nYellow; i++) {
+    const opp = rng() < 0.55;
+    const squad = opp ? theirs : mine;
+    if (squad.length === 0) continue;
+    const p = pickWeighted(rng, squad, squad.map(cardWeight));
+    const key = `${+opp}:${p.n}`;
+    const first = booked.get(key);
+    if (first === undefined) {
+      const m = freeMin();
+      booked.set(key, m);
+      events.push({ min: m, type: 'yellow', opp, player: p.n });
+    } else if (first > 0) {
+      events.push({ min: freeMin(first + 1), type: 'red', opp, player: p.n });
+      booked.set(key, -1);
+    }
+  }
+
+  // rare straight red
+  if (rng() < 0.045) {
+    const opp = rng() < 0.5;
+    const squad = opp ? theirs : mine;
+    if (squad.length > 0) {
+      const p = pickWeighted(rng, squad, squad.map(cardWeight));
+      if (booked.get(`${+opp}:${p.n}`) !== -1) {
+        events.push({ min: freeMin(), type: 'red', opp, player: p.n });
+        booked.set(`${+opp}:${p.n}`, -1);
+      }
+    }
+  }
+
+  // drama: woodwork, big saves, sitters missed
+  const nFlavor = 1 + Math.floor(rng() * 3);
+  for (let i = 0; i < nFlavor; i++) {
+    const opp = rng() < 0.45;
+    const squad = opp ? theirs : mine;
+    if (squad.length === 0) continue;
+    const p = pickWeighted(rng, squad, squad.map(scorerWeight));
+    const r = rng();
+    const type: MatchEventType = r < 0.34 ? 'post' : r < 0.67 ? 'save' : 'miss';
+    events.push({ min: freeMin(), type, opp, player: p.n });
+  }
+
+  return events.sort((a, b) => a.min - b.min);
+}
+
 // ---------- penalties ----------
 
 export interface PenaltyShootout {
@@ -241,6 +331,7 @@ export interface Fixture {
   scorers: string[];
   conceded: string[];
   goals: GoalEvent[];
+  events: MatchEvent[];
   groupTable?: GroupRow[];
 }
 
@@ -330,6 +421,7 @@ export function simulateCampaign(draft: DraftState, seed: string, all: Squad[]):
     const scorers = pickScorers(goalsRng, xi, score.gf, { isKnockout: !phase.group });
     const conceded = pickScorers(goalsRng, oppPlayers, score.ga, { isKnockout: !phase.group });
     const goals = buildGoals(rngFromSeed(`${upper}:min:${matchIndex}`), scorers, conceded);
+    const events = buildEvents(rngFromSeed(`${upper}:ev:${matchIndex}`), goals, xi, oppPlayers);
 
     if (phase.group) {
       if (score.outcome === 'W') wins++;
@@ -340,7 +432,7 @@ export function simulateCampaign(draft: DraftState, seed: string, all: Squad[]):
         stage: phase.stage, group: true, oppOverall: phase.overall,
         oppSel: identity.sel, oppCopa: identity.copa,
         gf: score.gf, ga: score.ga, outcome: score.outcome,
-        advanced: true, scorers, conceded, goals,
+        advanced: true, scorers, conceded, goals, events,
       };
       campaign.push(fixture);
       if (phase.stage === 'G3') {
@@ -372,7 +464,7 @@ export function simulateCampaign(draft: DraftState, seed: string, all: Squad[]):
       stage: phase.stage, group: false, oppOverall: phase.overall,
       oppSel: identity.sel, oppCopa: identity.copa,
       gf: score.gf, ga: score.ga, outcome: score.outcome,
-      advanced, penalties: score.outcome === 'D', pens, scorers, conceded, goals,
+      advanced, penalties: score.outcome === 'D', pens, scorers, conceded, goals, events,
     });
     if (!advanced) eliminated = true;
   }
@@ -394,6 +486,7 @@ export function simulateCampaign(draft: DraftState, seed: string, all: Squad[]):
       const regen = pickScorers(rngFromSeed(`${upper}:elim:gols`), elimSquad, fixture.ga, { isKnockout: true });
       fixture.conceded = regen;
       fixture.goals = buildGoals(rngFromSeed(`${upper}:elim:min`), fixture.scorers, regen);
+      fixture.events = buildEvents(rngFromSeed(`${upper}:elim:ev`), fixture.goals, xi, elimSquad);
       if (fixture.pens) fixture.pens.themNames = kickerNames(elimSquad, fixture.pens.them.length);
     }
   }

@@ -30,6 +30,7 @@ console.log('2026 squads:', squads.filter(s => s.copa === 2026).map(s => s.sel).
 // ---- auto-drafted full runs ----
 const N = 2000;
 let champs = 0, perfects = 0, rerollsUsed = 0, stuckCount = 0;
+let matches = 0, yellows = 0, reds = 0, penGoals = 0, penMisses = 0, drama = 0;
 const buckets: Record<string, [number, number]> = {};
 const modes: Mode[] = ['classic', 'almanak', 'hardcore', 'wc2026'];
 const styles: Style[] = ['defensive', 'balanced', 'offensive'];
@@ -76,6 +77,20 @@ for (let i = 0; i < N; i++) {
   for (const f of res.campaign) {
     if (f.scorers.length !== f.gf) throw new Error('scorer count mismatch');
     if (!COUNTRIES[f.oppSel]) throw new Error('bad opponent sel ' + f.oppSel);
+    // event timeline must agree with the score
+    matches++;
+    const evGoals = f.events.filter(e => e.type === 'goal' || e.type === 'pengoal');
+    if (evGoals.filter(e => !e.opp).length !== f.gf || evGoals.filter(e => e.opp).length !== f.ga) {
+      throw new Error('event goals do not match score');
+    }
+    for (const e of f.events) {
+      if (e.min < 1 || e.min > 90) throw new Error('bad event minute ' + e.min);
+      if (e.type === 'yellow') yellows++;
+      else if (e.type === 'red') reds++;
+      else if (e.type === 'pengoal') penGoals++;
+      else if (e.type === 'penmiss') penMisses++;
+      else if (e.type !== 'goal') drama++;
+    }
   }
   // determinism check on first run
   if (i === 0) {
@@ -95,6 +110,7 @@ for (let i = 0; i < N; i++) {
 }
 
 console.log(`\n${N} runs -> champion: ${(champs / N * 100).toFixed(1)}%, perfect: ${(perfects / N * 100).toFixed(1)}%, wildcards used: ${rerollsUsed}, stuck-pools: ${stuckCount}`);
+console.log(`events per match -> yellow ${(yellows / matches).toFixed(2)}, red ${(reds / matches).toFixed(3)}, pen goal ${(penGoals / matches).toFixed(3)}, pen miss ${(penMisses / matches).toFixed(3)}, drama ${(drama / matches).toFixed(2)}`);
 Object.keys(buckets).sort((a, b) => +a - +b).forEach(b => {
   const [n, c] = buckets[b];
   console.log(`  overall ${b}-${+b + 2}: ${n} runs, champion ${(c / n * 100).toFixed(1)}%`);

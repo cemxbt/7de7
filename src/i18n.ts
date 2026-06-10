@@ -49,6 +49,18 @@ const STRINGS = {
   // reveal
   next: { tr: 'Sıradaki Maç', en: 'Next Match' },
   autoSim: { tr: 'Otomatik Oynat', en: 'Auto-sim' },
+  // live match
+  kickoff: { tr: 'Maç başladı!', en: 'Kick-off!' },
+  halftime: { tr: 'İlk yarı sonu', en: 'Half-time' },
+  fulltime: { tr: 'Maç sonu', en: 'Full-time' },
+  pensTitle: { tr: 'Penaltı atışları', en: 'Penalty shootout' },
+  skipMatch: { tr: 'Maçı Geç', en: 'Skip Match' },
+  evPenGoal: { tr: '(penaltıdan)', en: '(penalty)' },
+  evPenMiss: { tr: 'penaltıyı kaçırdı!', en: 'misses the penalty!' },
+  evPost: { tr: 'şut direkte!', en: 'hits the woodwork!' },
+  evSave: { tr: 'kaleci kurtardı!', en: 'great save!' },
+  evMiss: { tr: 'inanılmaz fırsat kaçtı!', en: 'misses a sitter!' },
+  evRedNote: { tr: 'kırmızı kart!', en: 'red card!' },
   vs: { tr: 'vs', en: 'vs' },
   pen: { tr: 'pen.', en: 'pens' },
   scored: { tr: 'Goller:', en: 'Goals:' },
