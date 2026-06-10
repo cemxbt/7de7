@@ -10,6 +10,7 @@ interface Props {
   result: CampaignResult;
   draft: DraftState;
   onPlayAgain: () => void;
+  onDonate: () => void;
 }
 
 const STAGE_KEY: Record<Stage, StringKey> = {
@@ -59,7 +60,7 @@ function FixtureCard({ f, lang, final }: { f: Fixture; lang: Lang; final: boolea
   );
 }
 
-export default function Reveal({ lang, result, draft, onPlayAgain }: Props) {
+export default function Reveal({ lang, result, draft, onPlayAgain, onDonate }: Props) {
   const [step, setStep] = useState(0);
   const [copied, setCopied] = useState(false);
   const total = result.campaign.length;
@@ -199,6 +200,10 @@ export default function Reveal({ lang, result, draft, onPlayAgain }: Props) {
               {copied ? `✓ ${t('copied', lang)}` : `📋 ${t('share', lang)}`}
             </button>
           </div>
+
+          <button className="donate-reminder" onClick={onDonate}>
+            {t('donateReminder', lang)}
+          </button>
         </div>
       )}
     </main>

@@ -138,6 +138,7 @@ export default function App() {
           result={result}
           draft={finalDraft}
           onPlayAgain={() => setScreen('setup')}
+          onDonate={() => setDonateOpen(true)}
         />
       )}
 

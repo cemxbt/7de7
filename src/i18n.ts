@@ -86,6 +86,7 @@ const STRINGS = {
     en: 'This game is completely free with no ads. If you want to support it, you can donate to the crypto wallets below. Tap an address to copy it.',
   },
   donateCopy: { tr: 'Kopyala', en: 'Copy' },
+  donateReminder: { tr: 'Oyunu beğendin mi? Bir kahve ısmarlayabilirsin ☕', en: 'Enjoyed the game? You can buy me a coffee ☕' },
   donateNote: {
     tr: '⚠️ Göndermeden önce adresi ve ağı mutlaka kontrol et.',
     en: '⚠️ Always double-check the address and network before sending.',
