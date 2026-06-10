@@ -1,11 +1,15 @@
 import { useEffect, useState } from 'react';
-import { FORMATIONS, makeSlots, simulateTournament, teamStrength } from './game/engine';
-import type { Mode, Style, Slot, TournamentResult } from './game/engine';
+import type { FormationName } from './data/formations';
+import { loadSquads } from './data/loader';
+import { createGame } from './game/engine';
+import { randomSeed } from './game/rng';
+import { simulateCampaign, type CampaignResult } from './game/sim';
+import type { DraftState, GameState, Mode, Squad, Style } from './game/types';
 import type { Lang } from './i18n';
 import { t } from './i18n';
 import Setup from './components/Setup';
 import Draft from './components/Draft';
-import Tournament from './components/Tournament';
+import Reveal from './components/Reveal';
 
 export interface Stats {
   played: number;
@@ -27,13 +31,22 @@ type Theme = 'light' | 'dark';
 export default function App() {
   const [lang, setLang] = useState<Lang>(() => (localStorage.getItem('7de7-lang') as Lang) || 'en');
   const [theme, setTheme] = useState<Theme>(() => (localStorage.getItem('7de7-theme') as Theme) || 'light');
-  const [screen, setScreen] = useState<'setup' | 'draft' | 'sim'>('setup');
+  const [screen, setScreen] = useState<'setup' | 'draft' | 'reveal'>('setup');
+  const [squads, setSquads] = useState<Squad[] | null>(null);
+  const [loadError, setLoadError] = useState(false);
+
   const [mode, setMode] = useState<Mode>('classic');
-  const [formationIdx, setFormationIdx] = useState(0);
+  const [formation, setFormation] = useState<FormationName>('4-3-3');
   const [style, setStyle] = useState<Style>('balanced');
-  const [slots, setSlots] = useState<Slot[]>([]);
-  const [result, setResult] = useState<TournamentResult | null>(null);
+
+  const [game, setGame] = useState<GameState | null>(null);
+  const [result, setResult] = useState<CampaignResult | null>(null);
+  const [finalDraft, setFinalDraft] = useState<DraftState | null>(null);
   const [stats, setStats] = useState<Stats>(loadStats);
+
+  useEffect(() => {
+    loadSquads().then(setSquads).catch(() => setLoadError(true));
+  }, []);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -46,24 +59,25 @@ export default function App() {
   };
 
   const startGame = () => {
-    setSlots(makeSlots(FORMATIONS[formationIdx]));
+    setGame(createGame(randomSeed(), formation, style, mode));
     setResult(null);
     setScreen('draft');
   };
 
-  const startTournament = (finalSlots: Slot[]) => {
-    const res = simulateTournament(finalSlots, style);
+  const startTournament = (draft: DraftState, seed: string) => {
+    if (!squads) return;
+    const res = simulateCampaign(draft, seed, squads);
     const next: Stats = {
       played: stats.played + 1,
       titles: stats.titles + (res.champion ? 1 : 0),
       perfect: stats.perfect + (res.perfect ? 1 : 0),
-      best: Math.max(stats.best, Math.round(teamStrength(finalSlots))),
+      best: Math.max(stats.best, res.overall),
     };
     setStats(next);
     localStorage.setItem('7de7-stats', JSON.stringify(next));
-    setSlots(finalSlots);
+    setFinalDraft(draft);
     setResult(res);
-    setScreen('sim');
+    setScreen('reveal');
   };
 
   return (
@@ -89,42 +103,44 @@ export default function App() {
         </div>
       </header>
 
-      {screen === 'setup' && (
+      {!squads && (
+        <div className="load-screen">
+          {loadError ? '⚠️' : '⚽'} {loadError ? 'Error' : t('loading', lang)}
+        </div>
+      )}
+
+      {squads && screen === 'setup' && (
         <Setup
           lang={lang}
           mode={mode} setMode={setMode}
-          formationIdx={formationIdx} setFormationIdx={setFormationIdx}
+          formation={formation} setFormation={setFormation}
           style={style} setStyle={setStyle}
           stats={stats}
           onStart={startGame}
         />
       )}
 
-      {screen === 'draft' && (
+      {squads && screen === 'draft' && game && (
         <Draft
           lang={lang}
-          mode={mode}
-          formation={FORMATIONS[formationIdx]}
-          initialSlots={slots}
+          squads={squads}
+          initialGame={game}
           onSimulate={startTournament}
           onBack={() => setScreen('setup')}
         />
       )}
 
-      {screen === 'sim' && result && (
-        <Tournament
+      {squads && screen === 'reveal' && result && finalDraft && (
+        <Reveal
           lang={lang}
           result={result}
-          slots={slots}
-          mode={mode}
-          formationName={FORMATIONS[formationIdx].name}
-          styleName={t(style === 'balanced' ? 'styleBal' : style === 'offensive' ? 'styleOff' : 'styleDef', lang)}
+          draft={finalDraft}
           onPlayAgain={() => setScreen('setup')}
         />
       )}
 
       <footer className="footer">
-        <span>7'de 7 — Dream World Cup · 1950–2022</span>
+        <span>7'de 7 — Dream World Cup · 1950–2026</span>
         <span className="made-by">
           made by <a href="https://github.com/cemxbt" target="_blank" rel="noopener noreferrer">cemxbt</a>
         </span>

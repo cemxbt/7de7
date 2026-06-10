@@ -1,6 +1,6 @@
-import { FORMATIONS } from '../game/engine';
-import type { Mode, Style } from '../game/engine';
-import type { Lang } from '../i18n';
+import { FORMATION_NAMES, type FormationName } from '../data/formations';
+import type { Mode, Style } from '../game/types';
+import type { Lang, StringKey } from '../i18n';
 import { t } from '../i18n';
 import type { Stats } from '../App';
 
@@ -8,27 +8,28 @@ interface Props {
   lang: Lang;
   mode: Mode;
   setMode: (m: Mode) => void;
-  formationIdx: number;
-  setFormationIdx: (i: number) => void;
+  formation: FormationName;
+  setFormation: (f: FormationName) => void;
   style: Style;
   setStyle: (s: Style) => void;
   stats: Stats;
   onStart: () => void;
 }
 
-const MODES: { id: Mode; icon: string; nameKey: 'modeClassic' | 'modeMemory' | 'modeHardcore'; descKey: 'modeClassicDesc' | 'modeMemoryDesc' | 'modeHardcoreDesc' }[] = [
+const MODES: { id: Mode; icon: string; nameKey: StringKey; descKey: StringKey }[] = [
   { id: 'classic', icon: '⚽', nameKey: 'modeClassic', descKey: 'modeClassicDesc' },
-  { id: 'memory', icon: '🧠', nameKey: 'modeMemory', descKey: 'modeMemoryDesc' },
+  { id: 'almanak', icon: '🧠', nameKey: 'modeAlmanak', descKey: 'modeAlmanakDesc' },
   { id: 'hardcore', icon: '🔥', nameKey: 'modeHardcore', descKey: 'modeHardcoreDesc' },
+  { id: 'wc2026', icon: '🏟️', nameKey: 'mode2026', descKey: 'mode2026Desc' },
 ];
 
-const STYLES: { id: Style; icon: string; key: 'styleDef' | 'styleBal' | 'styleOff' }[] = [
+const STYLES: { id: Style; icon: string; key: StringKey }[] = [
   { id: 'defensive', icon: '🛡️', key: 'styleDef' },
   { id: 'balanced', icon: '⚖️', key: 'styleBal' },
   { id: 'offensive', icon: '⚡', key: 'styleOff' },
 ];
 
-export default function Setup({ lang, mode, setMode, formationIdx, setFormationIdx, style, setStyle, stats, onStart }: Props) {
+export default function Setup({ lang, mode, setMode, formation, setFormation, style, setStyle, stats, onStart }: Props) {
   return (
     <main className="setup">
       <div className="hero">
@@ -53,7 +54,7 @@ export default function Setup({ lang, mode, setMode, formationIdx, setFormationI
           {MODES.map(m => (
             <button
               key={m.id}
-              className={`mode-card ${mode === m.id ? 'sel' : ''}`}
+              className={`mode-card ${mode === m.id ? 'sel' : ''} ${m.id === 'wc2026' ? 'mode-2026' : ''}`}
               onClick={() => setMode(m.id)}
             >
               <span className="mode-icon">{m.icon}</span>
@@ -67,13 +68,13 @@ export default function Setup({ lang, mode, setMode, formationIdx, setFormationI
       <section className="card">
         <h2>{t('formation', lang)}</h2>
         <div className="pill-row">
-          {FORMATIONS.map((f, i) => (
+          {FORMATION_NAMES.map(f => (
             <button
-              key={f.name}
-              className={`pill ${formationIdx === i ? 'sel' : ''}`}
-              onClick={() => setFormationIdx(i)}
+              key={f}
+              className={`pill ${formation === f ? 'sel' : ''}`}
+              onClick={() => setFormation(f)}
             >
-              {f.name}
+              {f}
             </button>
           ))}
         </div>

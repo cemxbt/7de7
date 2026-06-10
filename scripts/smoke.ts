@@ -1,55 +1,101 @@
-import { FORMATIONS, makeSlots, rollSquad, simulateTournament, teamStrength } from '../src/game/engine';
-import { SQUADS } from '../src/data/squads';
+// Engine smoke test: data integrity + full auto-drafted runs + balance stats.
+import fs from 'node:fs';
+import {
+  applyChoose, createGame, eligiblePositions, findSquad, modePool, poolStuck,
+  ratings, reroll, rerollOptionsAvailable, roll,
+} from '../src/game/engine';
+import { simulateCampaign } from '../src/game/sim';
+import { randomSeed } from '../src/game/rng';
+import { FORMATION_NAMES } from '../src/data/formations';
+import { COUNTRIES } from '../src/data/countries';
+import { BANDS } from '../src/data/bands';
+import type { Mode, Squad, Style } from '../src/game/types';
 
-// data sanity
-for (const s of SQUADS) {
-  const counts = { GK: 0, DF: 0, MF: 0, FW: 0 };
-  s.players.forEach(p => counts[p.p]++);
-  if (counts.GK < 1 || counts.DF < 3 || counts.MF < 3 || counts.FW < 2) {
-    console.error('THIN SQUAD:', s.c, s.y, counts);
+const squads: Squad[] = JSON.parse(fs.readFileSync('public/data/squads.json', 'utf8'));
+
+// ---- data integrity ----
+console.log(`squads: ${squads.length}, players: ${squads.reduce((a, s) => a + s.squad.length, 0)}`);
+const validPos = new Set(['GK', 'RB', 'LB', 'CB', 'RM', 'LM', 'DM', 'CM', 'AM', 'RW', 'LW', 'ST']);
+for (const s of squads) {
+  if (!COUNTRIES[s.sel]) console.error('missing country:', s.sel);
+  for (const p of s.squad) {
+    if (p.pos.length === 0 || p.pos.some(x => !validPos.has(x))) console.error('bad pos', s.sel, s.copa, p.n, p.pos);
+    if (p.f < 40 || p.f > 99) console.error('bad force', s.sel, s.copa, p.n, p.f);
   }
-  const names = new Set(s.players.map(p => p.n));
-  if (names.size !== s.players.length) console.error('DUP NAME in', s.c, s.y);
+  if (!s.squad.some(p => p.pos.includes('GK'))) console.error('no GK', s.sel, s.copa);
 }
-console.log(`squads: ${SQUADS.length}, players: ${SQUADS.reduce((a, s) => a + s.players.length, 0)}`);
+if (BANDS.length !== squads.length) console.error('bands/squads mismatch', BANDS.length, squads.length);
+console.log('2026 squads:', squads.filter(s => s.copa === 2026).map(s => s.sel).join(', '));
 
-// simulate full runs with auto-drafted teams
-let champs = 0;
-let perfects = 0;
-const buckets: Record<string, [number, number]> = {};
+// ---- auto-drafted full runs ----
 const N = 2000;
+let champs = 0, perfects = 0, rerollsUsed = 0, stuckCount = 0;
+const buckets: Record<string, [number, number]> = {};
+const modes: Mode[] = ['classic', 'almanak', 'hardcore', 'wc2026'];
+const styles: Style[] = ['defensive', 'balanced', 'offensive'];
+
 for (let i = 0; i < N; i++) {
-  const formation = FORMATIONS[i % FORMATIONS.length];
-  const slots = makeSlots(formation);
-  const used = new Set<number>();
-  for (const slot of slots) {
-    // roll until a squad offers the needed position (always should)
-    for (let tries = 0; tries < 50 && !slot.player; tries++) {
-      const { squad } = rollSquad(used);
-      const candidates = squad.players.filter(p => p.p === slot.pos);
-      if (candidates.length > 0) {
-        const best = candidates.sort((a, b) => b.r - a.r)[0];
-        slot.player = { ...best, squad: squad.c, flag: squad.f, year: squad.y };
+  const mode = modes[i % modes.length];
+  const formation = FORMATION_NAMES[i % FORMATION_NAMES.length];
+  const style = styles[i % styles.length];
+  let game = createGame(randomSeed(), formation, style, mode);
+
+  let guard = 0;
+  while (game.draft.filled.some(f => f === null) && guard++ < 400) {
+    game = roll(game, squads);
+    let squad = findSquad(squads, game.current!.sel, game.current!.copa)!;
+    // burn a wildcard sometimes, like a real player would
+    if (game.draft.rerollsLeft > 0 && guard % 7 === 0) {
+      const avail = rerollOptionsAvailable(game, squads);
+      const axis = avail.cup && guard % 2 === 0 ? 'cup' : avail.team ? 'team' : avail.cup ? 'cup' : null;
+      if (axis) {
+        game = reroll(game, squads, axis);
+        rerollsUsed++;
+        squad = findSquad(squads, game.current!.sel, game.current!.copa)!;
       }
     }
-    if (!slot.player) throw new Error('could not fill slot ' + slot.pos);
+    while (poolStuck(game.draft, squad)) {
+      stuckCount++;
+      const avail = rerollOptionsAvailable(game, squads);
+      game = reroll(game, squads, avail.team ? 'team' : 'cup', true);
+      squad = findSquad(squads, game.current!.sel, game.current!.copa)!;
+    }
+    // pick the strongest eligible player
+    const eligible = squad.squad
+      .filter(p => !game.draft.usedPlayerIds.includes(p.id) && eligiblePositions(game.draft, p).length > 0)
+      .sort((a, b) => b.f - a.f);
+    const p = eligible[0];
+    const pos = eligiblePositions(game.draft, p)[0];
+    const slotIdx = game.draft.slots.findIndex((s, si) => s.pos === pos && game.draft.filled[si] === null);
+    game = { ...game, draft: applyChoose(game.draft, { ...p, sel: game.current!.sel, copa: game.current!.copa }, slotIdx), current: null };
   }
-  const res = simulateTournament(slots, i % 3 === 0 ? 'offensive' : i % 3 === 1 ? 'balanced' : 'defensive');
-  if (res.matches.length < 3 || res.matches.length > 7) throw new Error('bad match count');
+  if (game.draft.filled.some(f => f === null)) throw new Error('draft did not complete');
+
+  const res = simulateCampaign(game.draft, game.seed, squads);
+  if (res.campaign.length < 3 || res.campaign.length > 7) throw new Error('bad campaign length');
+  for (const f of res.campaign) {
+    if (f.scorers.length !== f.gf) throw new Error('scorer count mismatch');
+    if (!COUNTRIES[f.oppSel]) throw new Error('bad opponent sel ' + f.oppSel);
+  }
+  // determinism check on first run
+  if (i === 0) {
+    const res2 = simulateCampaign(game.draft, game.seed, squads);
+    if (JSON.stringify(res2.campaign.map(f => [f.gf, f.ga])) !== JSON.stringify(res.campaign.map(f => [f.gf, f.ga]))) {
+      throw new Error('simulation is not deterministic for same seed');
+    }
+    console.log('sample run:', `overall ${res.overall} atk ${res.attack} def ${res.defense}`);
+    res.campaign.forEach(f => console.log(` ${f.stage} ${f.gf}-${f.ga}${f.pens ? ` (p ${f.pens.score})` : ''} vs ${f.oppSel} ${f.oppCopa} -> ${f.group ? f.outcome : f.advanced ? 'adv' : 'OUT'}`));
+  }
   if (res.champion) champs++;
   if (res.perfect) perfects++;
-  const b = String(Math.floor(teamStrength(slots) / 2) * 2);
+  const b = String(Math.floor(res.overall / 2) * 2);
   buckets[b] = buckets[b] || [0, 0];
   buckets[b][0]++;
   if (res.champion) buckets[b][1]++;
-  if (i === 0) {
-    console.log('sample run, team str', teamStrength(slots).toFixed(1));
-    res.matches.forEach(m => console.log(` ${m.stage} ${m.gf}-${m.ga}${m.pens ? ` (p ${m.pens[0]}-${m.pens[1]})` : ''} vs ${m.opp.c} ${m.opp.y} -> ${m.won ? 'W' : m.drawn ? 'D' : 'L'}`));
-    console.log(' champion:', res.champion, 'eliminatedAt:', res.eliminatedAt);
-  }
 }
-console.log(`${N} sims -> champion rate: ${(champs / N * 100).toFixed(1)}%, perfect: ${(perfects / N * 100).toFixed(1)}%`);
-Object.keys(buckets).sort().forEach(b => {
+
+console.log(`\n${N} runs -> champion: ${(champs / N * 100).toFixed(1)}%, perfect: ${(perfects / N * 100).toFixed(1)}%, wildcards used: ${rerollsUsed}, stuck-pools: ${stuckCount}`);
+Object.keys(buckets).sort((a, b) => +a - +b).forEach(b => {
   const [n, c] = buckets[b];
-  console.log(`  str ${b}-${+b + 2}: ${n} runs, champion ${(c / n * 100).toFixed(1)}%`);
+  console.log(`  overall ${b}-${+b + 2}: ${n} runs, champion ${(c / n * 100).toFixed(1)}%`);
 });

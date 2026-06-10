@@ -1,325 +1,234 @@
-import { SQUADS, type Pos, type Player, type Squad } from '../data/squads';
+// Draft engine — faithful port of the original 7a0 mechanics.
+import { FORMATIONS, type FormationName } from '../data/formations';
+import type {
+  DraftState, GameState, Mode, Player, PlacedPlayer, Pos, Ratings, Squad, SquadKey, Style,
+} from './types';
+import { MODES } from './types';
+import { pick, pickWeighted, rngFromSeed, type Rng } from './rng';
 
-export type Mode = 'classic' | 'memory' | 'hardcore';
-export type Style = 'defensive' | 'balanced' | 'offensive';
+export const squadKey = (sel: string, copa: number): SquadKey => `${sel}:${copa}`;
 
-export interface FormationRow {
-  p: Pos;
-  n: number;
-}
-
-export interface Formation {
-  name: string;
-  rows: FormationRow[]; // attack -> defense, GK last
-}
-
-export const FORMATIONS: Formation[] = [
-  { name: '4-3-3', rows: [{ p: 'FW', n: 3 }, { p: 'MF', n: 3 }, { p: 'DF', n: 4 }, { p: 'GK', n: 1 }] },
-  { name: '4-4-2', rows: [{ p: 'FW', n: 2 }, { p: 'MF', n: 4 }, { p: 'DF', n: 4 }, { p: 'GK', n: 1 }] },
-  { name: '4-2-3-1', rows: [{ p: 'FW', n: 1 }, { p: 'MF', n: 3 }, { p: 'MF', n: 2 }, { p: 'DF', n: 4 }, { p: 'GK', n: 1 }] },
-  { name: '4-2-4', rows: [{ p: 'FW', n: 4 }, { p: 'MF', n: 2 }, { p: 'DF', n: 4 }, { p: 'GK', n: 1 }] },
-  { name: '3-5-2', rows: [{ p: 'FW', n: 2 }, { p: 'MF', n: 5 }, { p: 'DF', n: 3 }, { p: 'GK', n: 1 }] },
-  { name: '5-3-2', rows: [{ p: 'FW', n: 2 }, { p: 'MF', n: 3 }, { p: 'DF', n: 5 }, { p: 'GK', n: 1 }] },
-  { name: '4-5-1', rows: [{ p: 'FW', n: 1 }, { p: 'MF', n: 5 }, { p: 'DF', n: 4 }, { p: 'GK', n: 1 }] },
-  { name: '3-4-3', rows: [{ p: 'FW', n: 3 }, { p: 'MF', n: 4 }, { p: 'DF', n: 3 }, { p: 'GK', n: 1 }] },
-];
-
-export interface Slot {
-  id: number;
-  pos: Pos;
-  row: number; // index into formation.rows
-  player: (Player & { squad: string; flag: string; year: number }) | null;
-}
-
-export function makeSlots(formation: Formation): Slot[] {
-  const slots: Slot[] = [];
-  let id = 0;
-  formation.rows.forEach((row, ri) => {
-    for (let i = 0; i < row.n; i++) {
-      slots.push({ id: id++, pos: row.p, row: ri, player: null });
-    }
-  });
-  return slots;
-}
-
-// ---------- squad strength ----------
-
-function bestXIStrength(squad: Squad): number {
-  const byPos = (p: Pos) => squad.players.filter(pl => pl.p === p).sort((a, b) => b.r - a.r);
-  const pick: number[] = [];
-  pick.push(...byPos('GK').slice(0, 1).map(p => p.r));
-  pick.push(...byPos('DF').slice(0, 4).map(p => p.r));
-  pick.push(...byPos('MF').slice(0, 4).map(p => p.r));
-  pick.push(...byPos('FW').slice(0, 2).map(p => p.r));
-  // pad with remaining best players if a line is short
-  if (pick.length < 11) {
-    const used = new Set<Player>();
-    const rest = squad.players.slice().sort((a, b) => b.r - a.r).filter(p => !used.has(p));
-    for (const p of rest) {
-      if (pick.length >= 11) break;
-      pick.push(p.r);
-    }
-  }
-  return pick.reduce((a, b) => a + b, 0) / pick.length;
-}
-
-export interface Opponent {
-  c: string;
-  tr: string;
-  f: string;
-  y: number;
-  str: number;
-}
-
-const OPPONENTS: Opponent[] = SQUADS.map(s => ({ c: s.c, tr: s.tr, f: s.f, y: s.y, str: bestXIStrength(s) }));
-
-// ---------- draft ----------
-
-export function rollSquad(usedIdx: Set<number>): { squad: Squad; idx: number } {
-  const available = SQUADS.map((_, i) => i).filter(i => !usedIdx.has(i));
-  const pool = available.length > 0 ? available : SQUADS.map((_, i) => i);
-  const idx = pool[Math.floor(Math.random() * pool.length)];
-  return { squad: SQUADS[idx], idx };
-}
-
-// ---------- simulation ----------
-
-function poisson(lambda: number): number {
-  const L = Math.exp(-lambda);
-  let k = 0;
-  let p = 1;
-  do {
-    k++;
-    p *= Math.random();
-  } while (p > L);
-  return k - 1;
-}
-
-function clamp(x: number, lo: number, hi: number): number {
-  return Math.min(hi, Math.max(lo, x));
-}
-
-export function teamStrength(slots: Slot[]): number {
-  const filled = slots.filter(s => s.player);
-  if (filled.length === 0) return 0;
-  return filled.reduce((a, s) => a + s.player!.r, 0) / filled.length;
-}
-
-interface StyleMod {
-  atk: number;
-  def: number;
-}
-
-const STYLE_MODS: Record<Style, StyleMod> = {
-  offensive: { atk: 0.35, def: 0.3 },   // score more, concede more
-  balanced: { atk: 0, def: 0 },
-  defensive: { atk: -0.3, def: -0.35 }, // score less, concede less
+// countries that continue each other (Soviet Union -> Russia etc.)
+const ALIASES: Record<string, string[]> = {
+  URS: ['URS', 'RUS'], RUS: ['URS', 'RUS'],
+  YUG: ['YUG', 'SRB'], SRB: ['YUG', 'SRB'],
+  TCH: ['TCH', 'CZE'], CZE: ['TCH', 'CZE'],
 };
 
-function simScore(strA: number, strB: number, style: Style): [number, number] {
-  const mod = STYLE_MODS[style];
-  const diff = strA - strB;
-  const xgA = clamp(1.3 + diff * 0.16 + mod.atk, 0.1, 5.2);
-  const xgB = clamp(1.15 - diff * 0.13 + mod.def, 0.1, 5.2);
-  return [poisson(xgA), poisson(xgB)];
-}
+export const POS_ORDER: Record<Pos, number> = {
+  GK: 0, RB: 1, LB: 2, CB: 3, RM: 4, LM: 5, DM: 6, CM: 7, AM: 8, RW: 9, LW: 10, ST: 11,
+};
 
-export interface Scorer {
-  name: string;
-  minute: number;
-}
+const ATK_W: Record<Pos, number> = { GK: 0, RB: 0, CB: 0, LB: 0, RM: 0.5, LM: 0.5, DM: 0.2, CM: 0.5, AM: 0.8, RW: 1, ST: 1, LW: 1 };
+const DEF_W: Record<Pos, number> = { GK: 1, RB: 1, CB: 1, LB: 1, RM: 0.5, LM: 0.5, DM: 0.8, CM: 0.5, AM: 0.2, RW: 0, ST: 0, LW: 0 };
 
-function pickScorers(slots: Slot[], goals: number): Scorer[] {
-  const players = slots.filter(s => s.player).map(s => s.player!);
-  const weights = players.map(p => {
-    const posW = p.p === 'FW' ? 8 : p.p === 'MF' ? 4 : p.p === 'DF' ? 1 : 0.05;
-    return posW * Math.max(1, p.r - 55);
-  });
-  const total = weights.reduce((a, b) => a + b, 0);
-  const scorers: Scorer[] = [];
-  for (let g = 0; g < goals; g++) {
-    let r = Math.random() * total;
-    let i = 0;
-    while (r > weights[i]) {
-      r -= weights[i];
-      i++;
-    }
-    scorers.push({ name: players[i].n, minute: 1 + Math.floor(Math.random() * 90) });
-  }
-  return scorers.sort((a, b) => a.minute - b.minute);
-}
+// ---------- draft state ----------
 
-function simPenalties(gkA: number, gkB: number): [number, number] {
-  // conversion prob reduced by opposing GK quality
-  const pA = clamp(0.78 - (gkB - 80) * 0.008, 0.55, 0.92);
-  const pB = clamp(0.78 - (gkA - 80) * 0.008, 0.55, 0.92);
-  let a = 0;
-  let b = 0;
-  for (let i = 0; i < 5; i++) {
-    if (Math.random() < pA) a++;
-    if (Math.random() < pB) b++;
-  }
-  while (a === b) {
-    const sa = Math.random() < pA ? 1 : 0;
-    const sb = Math.random() < pB ? 1 : 0;
-    a += sa;
-    b += sb;
-    if (sa !== sb) break;
-  }
-  return [a, b];
-}
-
-export type Stage = 'G1' | 'G2' | 'G3' | 'R16' | 'QF' | 'SF' | 'F';
-
-export interface MatchResult {
-  stage: Stage;
-  opp: Opponent;
-  gf: number;
-  ga: number;
-  scorers: Scorer[];
-  pens: [number, number] | null;
-  won: boolean;
-  drawn: boolean;
-}
-
-export interface TableRow {
-  name: string; // 'YOU' for player team
-  tr: string;
-  flag: string;
-  year: number | null;
-  pts: number;
-  gf: number;
-  ga: number;
-}
-
-export interface TournamentResult {
-  matches: MatchResult[];
-  groupTable: TableRow[];
-  champion: boolean;
-  perfect: boolean; // 7 wins in 90 minutes
-  eliminatedAt: Stage | 'GROUP' | null;
-  wins: number;
-  draws: number;
-  losses: number;
-  gf: number;
-  ga: number;
-  teamStr: number;
-}
-
-function sample<T>(arr: T[], n: number, exclude: Set<T>): T[] {
-  const pool = arr.filter(x => !exclude.has(x));
-  const out: T[] = [];
-  while (out.length < n && pool.length > 0) {
-    const i = Math.floor(Math.random() * pool.length);
-    out.push(pool.splice(i, 1)[0]);
-  }
-  return out;
-}
-
-function pickKnockoutOpp(minPercentile: number, used: Set<Opponent>): Opponent {
-  const sorted = OPPONENTS.slice().sort((a, b) => a.str - b.str);
-  const from = Math.floor(sorted.length * minPercentile);
-  const pool = sorted.slice(from).filter(o => !used.has(o));
-  const fallback = sorted.filter(o => !used.has(o));
-  const p = pool.length > 0 ? pool : fallback.length > 0 ? fallback : sorted;
-  return p[Math.floor(Math.random() * p.length)];
-}
-
-export function simulateTournament(slots: Slot[], style: Style): TournamentResult {
-  const str = teamStrength(slots);
-  const gk = slots.find(s => s.pos === 'GK' && s.player)?.player?.r ?? 70;
-  const used = new Set<Opponent>();
-  const matches: MatchResult[] = [];
-
-  // ----- group stage -----
-  const groupOpps = sample(OPPONENTS, 3, used);
-  groupOpps.forEach(o => used.add(o));
-
-  const stages: Stage[] = ['G1', 'G2', 'G3'];
-  const myRow: TableRow = { name: 'YOU', tr: 'YOU', flag: '⭐', year: null, pts: 0, gf: 0, ga: 0 };
-  const oppRows: TableRow[] = groupOpps.map(o => ({ name: o.c, tr: o.tr, flag: o.f, year: o.y, pts: 0, gf: 0, ga: 0 }));
-
-  groupOpps.forEach((o, i) => {
-    const [gf, ga] = simScore(str, o.str, style);
-    matches.push({
-      stage: stages[i], opp: o, gf, ga,
-      scorers: pickScorers(slots, gf), pens: null,
-      won: gf > ga, drawn: gf === ga,
-    });
-    myRow.gf += gf;
-    myRow.ga += ga;
-    myRow.pts += gf > ga ? 3 : gf === ga ? 1 : 0;
-    oppRows[i].gf += ga;
-    oppRows[i].ga += gf;
-    oppRows[i].pts += ga > gf ? 3 : ga === gf ? 1 : 0;
-  });
-
-  // matches among the 3 opponents
-  for (let i = 0; i < 3; i++) {
-    for (let j = i + 1; j < 3; j++) {
-      const [gi, gj] = simScore(groupOpps[i].str, groupOpps[j].str, 'balanced');
-      oppRows[i].gf += gi;
-      oppRows[i].ga += gj;
-      oppRows[j].gf += gj;
-      oppRows[j].ga += gi;
-      oppRows[i].pts += gi > gj ? 3 : gi === gj ? 1 : 0;
-      oppRows[j].pts += gj > gi ? 3 : gj === gi ? 1 : 0;
-    }
-  }
-
-  const table = [myRow, ...oppRows].sort((a, b) =>
-    b.pts - a.pts || (b.gf - b.ga) - (a.gf - a.ga) || b.gf - a.gf || (a.name === 'YOU' ? -1 : 1)
-  );
-  const myPlace = table.findIndex(r => r.name === 'YOU');
-
-  const result: TournamentResult = {
-    matches, groupTable: table, champion: false, perfect: false,
-    eliminatedAt: null, wins: 0, draws: 0, losses: 0, gf: 0, ga: 0, teamStr: str,
+export function createDraft(formation: FormationName, style: Style, mode: Mode): DraftState {
+  const slots = FORMATIONS[formation][style];
+  return {
+    formation, style, mode,
+    slots: slots.map(s => ({ ...s })),
+    filled: slots.map(() => null),
+    usedPlayerIds: [],
+    rerollsLeft: MODES[mode].rerolls,
   };
+}
 
-  const tally = () => {
-    result.wins = matches.filter(m => m.won).length;
-    result.draws = matches.filter(m => m.drawn && !m.pens).length;
-    result.losses = matches.filter(m => !m.won && !(m.drawn && !m.pens)).length;
-    result.gf = matches.reduce((a, m) => a + m.gf, 0);
-    result.ga = matches.reduce((a, m) => a + m.ga, 0);
+export function createGame(seed: string, formation: FormationName, style: Style, mode: Mode): GameState {
+  return {
+    seed,
+    rollIndex: 0,
+    rerollNo: 0,
+    draft: createDraft(formation, style, mode),
+    current: null,
+    recent: [],
   };
+}
 
-  if (myPlace > 1) {
-    result.eliminatedAt = 'GROUP';
-    tally();
-    return result;
-  }
+function emptyCountByPos(draft: DraftState): Record<string, number> {
+  const counts: Record<string, number> = {};
+  draft.slots.forEach((s, i) => {
+    if (draft.filled[i] === null) counts[s.pos] = (counts[s.pos] ?? 0) + 1;
+  });
+  return counts;
+}
 
-  // ----- knockout -----
-  const knockout: { stage: Stage; pct: number }[] = [
-    { stage: 'R16', pct: 0.1 },
-    { stage: 'QF', pct: 0.35 },
-    { stage: 'SF', pct: 0.55 },
-    { stage: 'F', pct: 0.7 },
-  ];
+/** positions of this player that still have an empty slot */
+export function eligiblePositions(draft: DraftState, player: Player): Pos[] {
+  const empty = emptyCountByPos(draft);
+  return player.pos.filter(p => (empty[p] ?? 0) > 0);
+}
 
-  for (const k of knockout) {
-    const opp = pickKnockoutOpp(k.pct, used);
-    used.add(opp);
-    const [gf, ga] = simScore(str, opp.str, style);
-    let pens: [number, number] | null = null;
-    let won = gf > ga;
-    if (gf === ga) {
-      const oppGk = 74 + (opp.str - 74) * 0.5;
-      pens = simPenalties(gk, oppGk);
-      won = pens[0] > pens[1];
+export function isPlayerSelectable(draft: DraftState, player: Player): boolean {
+  return !draft.usedPlayerIds.includes(player.id) && eligiblePositions(draft, player).length > 0;
+}
+
+/** true when the current squad offers no selectable player (free emergency reroll) */
+export function poolStuck(draft: DraftState, squad: Squad | undefined): boolean {
+  if (!squad) return false;
+  if (draft.filled.every(f => f !== null)) return false;
+  return squad.squad.every(p => !isPlayerSelectable(draft, p));
+}
+
+/** slots a placed player can move to (empty compatible, or swap with mutually compatible) */
+export function moveTargets(draft: DraftState, from: number): number[] {
+  const mover = draft.filled[from];
+  const fromSlot = draft.slots[from];
+  if (!mover || !fromSlot) return [];
+  const targets: number[] = [];
+  draft.slots.forEach((slot, i) => {
+    if (i === from) return;
+    const occupant = draft.filled[i];
+    if (occupant) {
+      if (mover.pos.includes(slot.pos) && occupant.pos.includes(fromSlot.pos)) targets.push(i);
+    } else if (mover.pos.includes(slot.pos)) {
+      targets.push(i);
     }
-    matches.push({ stage: k.stage, opp, gf, ga, scorers: pickScorers(slots, gf), pens, won, drawn: gf === ga });
-    if (!won) {
-      result.eliminatedAt = k.stage;
-      tally();
-      return result;
-    }
-  }
+  });
+  return targets;
+}
 
-  result.champion = true;
-  result.perfect = matches.every(m => m.won && !m.pens);
-  tally();
-  return result;
+export function applyMove(draft: DraftState, from: number, to: number): DraftState {
+  const filled = draft.filled.slice();
+  const mover = filled[from];
+  filled[from] = filled[to] ?? null;
+  filled[to] = mover;
+  return { ...draft, filled };
+}
+
+export function applyChoose(draft: DraftState, player: PlacedPlayer, slotIdx: number): DraftState {
+  if (draft.usedPlayerIds.includes(player.id)) throw new Error('player already used');
+  if (draft.filled[slotIdx] !== null) throw new Error('slot occupied');
+  if (!player.pos.includes(draft.slots[slotIdx].pos)) throw new Error('incompatible position');
+  const filled = draft.filled.slice();
+  filled[slotIdx] = player;
+  return { ...draft, filled, usedPlayerIds: [...draft.usedPlayerIds, player.id] };
+}
+
+// ---------- ratings ----------
+
+export function overall(draft: DraftState): number {
+  const placed = draft.filled.filter((p): p is PlacedPlayer => p !== null);
+  if (placed.length === 0) return 0;
+  return Math.round(placed.reduce((a, p) => a + p.f, 0) / placed.length);
+}
+
+export function ratings(draft: DraftState): Ratings {
+  let atkSum = 0, atkW = 0, defSum = 0, defW = 0, total = 0, count = 0;
+  draft.slots.forEach((slot, i) => {
+    const p = draft.filled[i];
+    const aw = ATK_W[slot.pos];
+    const dw = DEF_W[slot.pos];
+    atkW += aw;
+    defW += dw;
+    if (p) {
+      atkSum += p.f * aw;
+      defSum += p.f * dw;
+      total += p.f;
+      count++;
+    }
+  });
+  return {
+    attack: atkW > 0 ? Math.round(atkSum / atkW) : 0,
+    defense: defW > 0 ? Math.round(defSum / defW) : 0,
+    overall: count > 0 ? Math.round(total / count) : 0,
+  };
+}
+
+// ---------- rolling ----------
+
+/** strength weights: stronger squads appear more often (0.25..1) */
+function squadWeights(pool: Squad[]): Map<SquadKey, number> {
+  const avgs = pool.map(s => ({
+    key: squadKey(s.sel, s.copa),
+    avg: s.squad.length === 0 ? 75 : s.squad.reduce((a, p) => a + p.f, 0) / s.squad.length,
+  }));
+  const vals = avgs.map(a => a.avg);
+  const min = Math.min(...vals);
+  const range = Math.max(...vals) - min || 1;
+  const map = new Map<SquadKey, number>();
+  for (const a of avgs) map.set(a.key, 0.25 + 0.75 * ((a.avg - min) / range));
+  return map;
+}
+
+export function modePool(all: Squad[], mode: Mode): Squad[] {
+  const copa = MODES[mode].poolCopa;
+  return copa === null ? all : all.filter(s => s.copa === copa);
+}
+
+const keepRecent = (recent: SquadKey[], k: SquadKey): SquadKey[] => [...recent, k].slice(-6);
+
+export function roll(game: GameState, all: Squad[]): GameState {
+  const pool = modePool(all, game.draft.mode);
+  const rng = rngFromSeed(`${game.seed}:roll:${game.rollIndex}`);
+  const weights = squadWeights(pool);
+  const entries = pool.map(s => ({ sel: s.sel, copa: s.copa }));
+  const recent = new Set(game.recent);
+  const fresh = entries.filter(e => !recent.has(squadKey(e.sel, e.copa)));
+  const candidates = fresh.length ? fresh : entries;
+  const chosen = pickWeighted(rng, candidates, candidates.map(e => weights.get(squadKey(e.sel, e.copa)) ?? 0.5));
+  return {
+    ...game,
+    current: chosen,
+    rollIndex: game.rollIndex + 1,
+    rerollNo: 0,
+    recent: keepRecent(game.recent, squadKey(chosen.sel, chosen.copa)),
+  };
+}
+
+export type RerollAxis = 'team' | 'cup';
+
+function rerollPick(
+  rng: Rng, pool: Squad[], current: { sel: string; copa: number },
+  axis: RerollAxis, exclude: Set<SquadKey>,
+): { sel: string; copa: number } {
+  if (axis === 'cup') {
+    // same team (incl. historical aliases), another cup — weighted toward stronger eras
+    const weights = squadWeights(pool);
+    const sels = ALIASES[current.sel] ?? [current.sel];
+    const opts = pool
+      .filter(s => sels.includes(s.sel) && (s.sel !== current.sel || s.copa !== current.copa))
+      .map(s => ({ sel: s.sel, copa: s.copa }));
+    if (opts.length === 0) return current;
+    const fresh = opts.filter(o => !exclude.has(squadKey(o.sel, o.copa)));
+    const candidates = fresh.length ? fresh : opts;
+    return pickWeighted(rng, candidates, candidates.map(o => weights.get(squadKey(o.sel, o.copa)) ?? 0.5));
+  }
+  // same cup, another team — uniform
+  const sels = pool.filter(s => s.copa === current.copa && s.sel !== current.sel).map(s => s.sel);
+  if (sels.length === 0) return current;
+  const fresh = sels.filter(sel => !exclude.has(squadKey(sel, current.copa)));
+  return { sel: pick(rng, fresh.length ? fresh : sels), copa: current.copa };
+}
+
+export function rerollOptionsAvailable(game: GameState, all: Squad[]): { team: boolean; cup: boolean } {
+  if (!game.current) return { team: false, cup: false };
+  const pool = modePool(all, game.draft.mode);
+  const sels = ALIASES[game.current.sel] ?? [game.current.sel];
+  const cur = game.current;
+  return {
+    team: pool.some(s => s.copa === cur.copa && s.sel !== cur.sel),
+    cup: pool.some(s => sels.includes(s.sel) && (s.sel !== cur.sel || s.copa !== cur.copa)),
+  };
+}
+
+export function reroll(game: GameState, all: Squad[], axis: RerollAxis, free = false): GameState {
+  if (!game.current) throw new Error('nothing to reroll');
+  if (!free && game.draft.rerollsLeft <= 0) throw new Error('no rerolls left');
+  const pool = modePool(all, game.draft.mode);
+  const rng = rngFromSeed(`${game.seed}:roll:${game.rollIndex}:rr:${game.rerollNo}:${axis}`);
+  const exclude = new Set(game.recent);
+  const next = rerollPick(rng, pool, game.current, axis, exclude);
+  return {
+    ...game,
+    current: next,
+    rerollNo: game.rerollNo + 1,
+    draft: free ? game.draft : { ...game.draft, rerollsLeft: game.draft.rerollsLeft - 1 },
+    recent: keepRecent(game.recent, squadKey(next.sel, next.copa)),
+  };
+}
+
+export function findSquad(all: Squad[], sel: string, copa: number): Squad | undefined {
+  return all.find(s => s.sel === sel && s.copa === copa);
 }

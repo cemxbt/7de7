@@ -1,50 +1,49 @@
-import { useState } from 'react';
-import { rollSquad, teamStrength } from '../game/engine';
-import type { Formation, Mode, Slot } from '../game/engine';
-import type { Player, Pos, Squad } from '../data/squads';
+import { useMemo, useState } from 'react';
+import { COUNTRIES } from '../data/countries';
+import {
+  applyChoose, applyMove, eligiblePositions, findSquad, isPlayerSelectable,
+  moveTargets as getMoveTargets, poolStuck, ratings, reroll, rerollOptionsAvailable, roll,
+  POS_ORDER,
+} from '../game/engine';
+import type { GameState, Player, Squad, DraftState } from '../game/types';
 import type { Lang } from '../i18n';
-import { t } from '../i18n';
+import { POS_LABEL, t } from '../i18n';
 import Pitch from './Pitch';
 
 interface Props {
   lang: Lang;
-  mode: Mode;
-  formation: Formation;
-  initialSlots: Slot[];
-  onSimulate: (slots: Slot[]) => void;
+  squads: Squad[];
+  initialGame: GameState;
+  onSimulate: (draft: DraftState, seed: string) => void;
   onBack: () => void;
 }
 
-const POS_ORDER: Pos[] = ['GK', 'DF', 'MF', 'FW'];
-const POS_LABEL: Record<Pos, { tr: string; en: string }> = {
-  GK: { tr: 'Kaleci', en: 'Goalkeeper' },
-  DF: { tr: 'Defans', en: 'Defence' },
-  MF: { tr: 'Orta Saha', en: 'Midfield' },
-  FW: { tr: 'Forvet', en: 'Attack' },
-};
-
-export default function Draft({ lang, mode, formation, initialSlots, onSimulate, onBack }: Props) {
-  const [slots, setSlots] = useState<Slot[]>(initialSlots);
-  const [usedIdx] = useState<Set<number>>(() => new Set());
-  const [current, setCurrent] = useState<Squad | null>(null);
+export default function Draft({ lang, squads, initialGame, onSimulate, onBack }: Props) {
+  const [game, setGame] = useState<GameState>(initialGame);
   const [selected, setSelected] = useState<Player | null>(null);
-  const [skips, setSkips] = useState(mode === 'hardcore' ? 0 : 3);
+  const [moveFrom, setMoveFrom] = useState<number | null>(null);
   const [rolling, setRolling] = useState(false);
   const [diceFace, setDiceFace] = useState('🎲');
 
-  const filledCount = slots.filter(s => s.player).length;
-  const done = filledCount === 11;
-  const hideRatings = mode === 'memory';
+  const { draft, current } = game;
+  const almanak = draft.mode === 'almanak';
+  const filledCount = draft.filled.filter(Boolean).length;
+  const complete = filledCount === 11;
+  const hideStats = almanak && !complete;
 
-  const hasEmptySlot = (pos: Pos) => slots.some(s => s.pos === pos && !s.player);
+  const currentSquad = useMemo(
+    () => (current ? findSquad(squads, current.sel, current.copa) : undefined),
+    [current, squads],
+  );
 
-  const doRoll = (spendSkip: boolean) => {
-    if (rolling) return;
-    if (spendSkip) {
-      if (skips <= 0) return;
-      setSkips(skips - 1);
-    }
+  const stuck = poolStuck(draft, currentSquad);
+  const rrAvail = rerollOptionsAvailable(game, squads);
+  const { attack, defense, overall } = ratings(draft);
+
+  const doRoll = () => {
+    if (rolling || current || complete) return;
     setSelected(null);
+    setMoveFrom(null);
     setRolling(true);
     const faces = ['⚀', '⚁', '⚂', '⚃', '⚄', '⚅'];
     let ticks = 0;
@@ -53,61 +52,97 @@ export default function Draft({ lang, mode, formation, initialSlots, onSimulate,
       ticks++;
       if (ticks >= 8) {
         clearInterval(iv);
-        const { squad, idx } = rollSquad(usedIdx);
-        usedIdx.add(idx);
-        setCurrent(squad);
+        setGame(g => roll(g, squads));
         setRolling(false);
         setDiceFace('🎲');
       }
-    }, 90);
+    }, 80);
   };
 
-  const placeOnSlot = (slot: Slot) => {
-    if (!selected || slot.player || slot.pos !== selected.p || !current) return;
-    const next = slots.map(s =>
-      s.id === slot.id
-        ? { ...s, player: { ...selected, squad: current.c, flag: current.f, year: current.y } }
-        : s
-    );
-    setSlots(next);
+  const doReroll = (axis: 'team' | 'cup') => {
+    if (!current) return;
+    if (!stuck && draft.rerollsLeft <= 0) return;
     setSelected(null);
-    setCurrent(null);
+    setGame(g => reroll(g, squads, axis, stuck));
   };
 
-  const strength = teamStrength(slots);
+  const onSlotClick = (idx: number) => {
+    // placement
+    if (selected && current && draft.filled[idx] === null && selected.pos.includes(draft.slots[idx].pos)) {
+      const placed = { ...selected, sel: current.sel, copa: current.copa };
+      setGame(g => ({ ...g, draft: applyChoose(g.draft, placed, idx), current: null }));
+      setSelected(null);
+      return;
+    }
+    // move / swap (only between rolls)
+    if (!current) {
+      if (moveFrom === null) {
+        if (draft.filled[idx]) setMoveFrom(idx);
+      } else if (idx === moveFrom) {
+        setMoveFrom(null);
+      } else if (getMoveTargets(draft, moveFrom).includes(idx)) {
+        setGame(g => ({ ...g, draft: applyMove(g.draft, moveFrom, idx) }));
+        setMoveFrom(null);
+      } else {
+        setMoveFrom(draft.filled[idx] ? idx : null);
+      }
+    }
+  };
+
+  const highlight = selected ? eligiblePositions(draft, selected) : [];
+  const targets = moveFrom !== null ? getMoveTargets(draft, moveFrom) : [];
+
+  const poolSorted = currentSquad
+    ? [...currentSquad.squad].sort((a, b) =>
+        (POS_ORDER[a.pos[0]] ?? 99) - (POS_ORDER[b.pos[0]] ?? 99) || b.f - a.f)
+    : [];
+
+  const country = current ? COUNTRIES[current.sel] : null;
 
   return (
     <main className="draft">
       <div className="draft-head">
         <button className="ghost" onClick={onBack}>← {t('back', lang)}</button>
-        <div className="draft-progress">
-          <b>{filledCount}/11</b> {t('draftProgress', lang)}
-          {!hideRatings && filledCount > 0 && (
-            <span className="power-badge">{t('teamPower', lang)}: <b>{strength.toFixed(1)}</b></span>
-          )}
+        <div className="box-ratings-inline">
+          <span className="rating-chip ovr"><b>{hideStats ? '?' : overall || '—'}</b> {t('overall', lang)}</span>
+          <span className="rating-chip atk"><b>{hideStats ? '?' : attack || '—'}</b> {t('attack', lang)}</span>
+          <span className="rating-chip def"><b>{hideStats ? '?' : defense || '—'}</b> {t('defense', lang)}</span>
+          <span className="rating-chip cnt"><b>{filledCount}</b>/11</span>
         </div>
       </div>
 
       <div className="draft-grid">
-        <Pitch
-          formation={formation}
-          slots={slots}
-          highlightPos={selected?.p ?? null}
-          hideRatings={hideRatings}
-          onSlotClick={placeOnSlot}
-        />
+        <div className="pitch-col">
+          <Pitch
+            lang={lang}
+            draft={draft}
+            highlight={highlight}
+            moveFrom={moveFrom}
+            moveTargets={targets}
+            moveEnabled={!current && !rolling}
+            onSlotClick={onSlotClick}
+          />
+          {!current && !complete && filledCount > 0 && (
+            <p className="pitch-hint">
+              {moveFrom !== null ? `↔ ${t('hintMoveActive', lang)}` : `✋ ${t('hintMove', lang)}`}
+            </p>
+          )}
+          {selected && <p className="pitch-hint glow">👉 {t('chooseSlot', lang)}</p>}
+        </div>
 
         <div className="draft-panel">
-          {done ? (
+          {complete ? (
             <div className="sim-ready">
               <div className="sim-ready-icon">🏆</div>
-              <button className="cta" onClick={() => onSimulate(slots)}>
+              <p>{t('lineupComplete', lang)}</p>
+              <button className="cta" onClick={() => onSimulate(draft, game.seed)}>
                 {t('simulate', lang)}
               </button>
             </div>
           ) : !current ? (
             <div className="roll-area">
-              <button className={`dice-btn ${rolling ? 'rolling' : ''}`} onClick={() => doRoll(false)} disabled={rolling}>
+              <p className="roll-idle">{t('rollIdle', lang)}</p>
+              <button className={`dice-btn ${rolling ? 'rolling' : ''}`} onClick={doRoll} disabled={rolling}>
                 <span className="dice-face">{diceFace}</span>
                 <span>{rolling ? t('rolling', lang) : t('roll', lang)}</span>
               </button>
@@ -115,43 +150,48 @@ export default function Draft({ lang, mode, formation, initialSlots, onSimulate,
           ) : (
             <div className="squad-panel">
               <div className="squad-head">
-                <span className="squad-flag">{current.f}</span>
-                <div>
-                  <b>{lang === 'tr' ? current.tr : current.c} {current.y}</b>
+                <span className="squad-flag">{country?.flag}</span>
+                <div className="squad-title">
+                  <b>{country ? country[lang] : current.sel} {current.copa}</b>
                   <small>{t('squadOf', lang)}</small>
                 </div>
-                {skips > 0 && (
-                  <button className="skip-btn" onClick={() => doRoll(true)}>
-                    ⏭ {t('skip', lang)} <b>({skips})</b>
-                  </button>
-                )}
               </div>
-              <p className="hint">
-                {selected ? `👉 ${t('pickSlot', lang)}` : `👆 ${t('pickPlayer', lang)}`}
-              </p>
+
+              {(stuck || draft.rerollsLeft > 0) && (
+                <div className={`reroll-box ${stuck ? 'stuck' : ''}`}>
+                  <span className="reroll-label">
+                    {stuck ? `⚠️ ${t('rerollStuck', lang)}` : `🃏 ${t('rerollLabel', lang, { n: draft.rerollsLeft })}`}
+                  </span>
+                  <div className="reroll-btns">
+                    <button className="reroll-btn" disabled={!rrAvail.team} onClick={() => doReroll('team')}>
+                      🌍 {t('rerollTeam', lang)}
+                    </button>
+                    <button className="reroll-btn" disabled={!rrAvail.cup} onClick={() => doReroll('cup')}>
+                      📅 {t('rerollCup', lang)}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              <p className="hint">{selected ? `👉 ${t('chooseSlot', lang)}` : `👆 ${t('choosePlayer', lang)}`}</p>
+
               <div className="player-list">
-                {POS_ORDER.map(pos => {
-                  const group = current.players.filter(p => p.p === pos);
-                  if (group.length === 0) return null;
+                {poolSorted.map(p => {
+                  const selectable = isPlayerSelectable(draft, p);
                   return (
-                    <div key={pos} className="pos-group">
-                      <div className="pos-title">{POS_LABEL[pos][lang]}</div>
-                      {group.sort((a, b) => b.r - a.r).map(p => {
-                        const placeable = hasEmptySlot(p.p);
-                        return (
-                          <button
-                            key={p.n}
-                            className={`player-row ${selected === p ? 'sel' : ''}`}
-                            disabled={!placeable}
-                            onClick={() => setSelected(selected === p ? null : p)}
-                          >
-                            <span className={`pos-tag pos-${p.p}`}>{p.p}</span>
-                            <span className="player-name">{p.n}</span>
-                            <span className="player-rating">{hideRatings ? '?' : p.r}</span>
-                          </button>
-                        );
-                      })}
-                    </div>
+                    <button
+                      key={p.id}
+                      className={`player-row ${selected?.id === p.id ? 'sel' : ''} ${p.leg ? 'legend' : ''}`}
+                      disabled={!selectable}
+                      onClick={() => setSelected(selected?.id === p.id ? null : p)}
+                    >
+                      <span className="player-no">{p.no || '–'}</span>
+                      <span className="player-pos">
+                        {p.pos.map(x => POS_LABEL[x][lang]).join(' · ')}
+                      </span>
+                      <span className="player-name">{p.leg && '⭐ '}{p.n}</span>
+                      <span className="player-rating">{almanak ? '?' : p.f}</span>
+                    </button>
                   );
                 })}
               </div>
