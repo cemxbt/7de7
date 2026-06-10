@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { FORMATIONS, makeSlots, simulateTournament, teamStrength } from './game/engine';
 import type { Mode, Style, Slot, TournamentResult } from './game/engine';
 import type { Lang } from './i18n';
@@ -22,8 +22,11 @@ function loadStats(): Stats {
   return { played: 0, titles: 0, perfect: 0, best: 0 };
 }
 
+type Theme = 'light' | 'dark';
+
 export default function App() {
-  const [lang, setLang] = useState<Lang>(() => (localStorage.getItem('7de7-lang') as Lang) || 'tr');
+  const [lang, setLang] = useState<Lang>(() => (localStorage.getItem('7de7-lang') as Lang) || 'en');
+  const [theme, setTheme] = useState<Theme>(() => (localStorage.getItem('7de7-theme') as Theme) || 'light');
   const [screen, setScreen] = useState<'setup' | 'draft' | 'sim'>('setup');
   const [mode, setMode] = useState<Mode>('classic');
   const [formationIdx, setFormationIdx] = useState(0);
@@ -31,6 +34,11 @@ export default function App() {
   const [slots, setSlots] = useState<Slot[]>([]);
   const [result, setResult] = useState<TournamentResult | null>(null);
   const [stats, setStats] = useState<Stats>(loadStats);
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    localStorage.setItem('7de7-theme', theme);
+  }, [theme]);
 
   const switchLang = (l: Lang) => {
     setLang(l);
@@ -66,9 +74,18 @@ export default function App() {
           <span className="logo-de">{lang === 'tr' ? "'de" : 'in'}</span>
           <span className="logo-7">7</span>
         </button>
-        <div className="lang-switch">
-          <button className={lang === 'tr' ? 'on' : ''} onClick={() => switchLang('tr')}>TR</button>
-          <button className={lang === 'en' ? 'on' : ''} onClick={() => switchLang('en')}>EN</button>
+        <div className="topbar-controls">
+          <div className="lang-switch">
+            <button className={lang === 'en' ? 'on' : ''} onClick={() => switchLang('en')}>EN</button>
+            <button className={lang === 'tr' ? 'on' : ''} onClick={() => switchLang('tr')}>TR</button>
+          </div>
+          <button
+            className="theme-toggle"
+            onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}
+            aria-label={theme === 'light' ? 'Dark theme' : 'Light theme'}
+          >
+            {theme === 'light' ? '🌙' : '☀️'}
+          </button>
         </div>
       </header>
 
@@ -108,6 +125,9 @@ export default function App() {
 
       <footer className="footer">
         <span>7'de 7 — Dream World Cup · 1950–2022</span>
+        <span className="made-by">
+          made by <a href="https://github.com/cemxbt" target="_blank" rel="noopener noreferrer">cemxbt</a>
+        </span>
       </footer>
     </div>
   );
