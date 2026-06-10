@@ -1,7 +1,7 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { COUNTRIES } from '../data/countries';
 import {
-  applyChoose, applyMove, eligiblePositions, findSquad, isPlayerSelectable,
+  applyChoose, applyMove, autoCompleteGame, eligiblePositions, findSquad, isPlayerSelectable,
   moveTargets as getMoveTargets, poolStuck, ratings, reroll, rerollOptionsAvailable, roll,
   POS_ORDER,
 } from '../game/engine';
@@ -16,14 +16,33 @@ interface Props {
   initialGame: GameState;
   onSimulate: (draft: DraftState, seed: string) => void;
   onBack: () => void;
+  /** timed drafts (synced duels): seconds until the squad is auto-completed */
+  timeLimit?: number;
 }
 
-export default function Draft({ lang, squads, initialGame, onSimulate, onBack }: Props) {
+export default function Draft({ lang, squads, initialGame, onSimulate, onBack, timeLimit }: Props) {
   const [game, setGame] = useState<GameState>(initialGame);
   const [selected, setSelected] = useState<Player | null>(null);
   const [moveFrom, setMoveFrom] = useState<number | null>(null);
   const [rolling, setRolling] = useState(false);
   const [diceFace, setDiceFace] = useState('🎲');
+  const [left, setLeft] = useState(timeLimit ?? 0);
+  const submittedRef = useRef(false);
+
+  // timed draft countdown: when it hits zero, finish the squad automatically
+  useEffect(() => {
+    if (!timeLimit) return;
+    const iv = setInterval(() => setLeft(l => Math.max(0, l - 1)), 1000);
+    return () => clearInterval(iv);
+  }, [timeLimit]);
+
+  useEffect(() => {
+    if (!timeLimit || left > 0 || submittedRef.current) return;
+    submittedRef.current = true;
+    const done = autoCompleteGame(game, squads);
+    onSimulate(done.draft, done.seed);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [left, timeLimit]);
 
   const { draft, current } = game;
   const almanak = draft.mode === 'almanak';
@@ -103,6 +122,11 @@ export default function Draft({ lang, squads, initialGame, onSimulate, onBack }:
     <main className="draft">
       <div className="draft-head">
         <button className="ghost" onClick={onBack}>← {t('back', lang)}</button>
+        {timeLimit !== undefined && (
+          <span className={`draft-timer ${left <= 30 ? 'low' : ''}`}>
+            ⏱ {Math.floor(left / 60)}:{String(left % 60).padStart(2, '0')}
+          </span>
+        )}
         <div className="box-ratings-inline">
           <span className="rating-chip ovr"><b>{hideStats ? '?' : overall || '—'}</b> {t('overall', lang)}</span>
           <span className="rating-chip atk"><b>{hideStats ? '?' : attack || '—'}</b> {t('attack', lang)}</span>
@@ -135,7 +159,14 @@ export default function Draft({ lang, squads, initialGame, onSimulate, onBack }:
             <div className="sim-ready">
               <div className="sim-ready-icon">🏆</div>
               <p>{t('lineupComplete', lang)}</p>
-              <button className="cta" onClick={() => onSimulate(draft, game.seed)}>
+              <button
+                className="cta"
+                onClick={() => {
+                  if (submittedRef.current) return;
+                  submittedRef.current = true;
+                  onSimulate(draft, game.seed);
+                }}
+              >
                 {t('simulate', lang)}
               </button>
             </div>

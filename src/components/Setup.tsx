@@ -20,8 +20,10 @@ interface Props {
   user: User | null;
   urlDuelCode: string;
   onDaily: () => void;
-  onDuelCreate: () => void;
+  onWeekly: () => void;
+  onDuelCreate: () => Promise<void>;
   onDuelJoin: (duel: Duel) => void;
+  onQuickMatch: () => Promise<void>;
   onNeedLogin: () => void;
 }
 
@@ -40,7 +42,7 @@ const STYLES: { id: Style; icon: string; key: StringKey }[] = [
 
 export default function Setup({
   lang, mode, setMode, formation, setFormation, style, setStyle, stats, onStart,
-  user, urlDuelCode, onDaily, onDuelCreate, onDuelJoin, onNeedLogin,
+  user, urlDuelCode, onDaily, onWeekly, onDuelCreate, onDuelJoin, onQuickMatch, onNeedLogin,
 }: Props) {
   return (
     <main className="setup">
@@ -133,8 +135,10 @@ export default function Setup({
         user={user}
         initialCode={urlDuelCode}
         onDaily={onDaily}
+        onWeekly={onWeekly}
         onDuelCreate={onDuelCreate}
         onDuelJoin={onDuelJoin}
+        onQuickMatch={onQuickMatch}
         onNeedLogin={onNeedLogin}
       />
 

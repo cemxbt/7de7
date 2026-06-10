@@ -1342,8 +1342,77 @@ body {
 
 .online-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 12px;
+}
+
+.quick-box { border-color: var(--gold-border); }
+
+.quick-found b { color: var(--gold); }
+
+/* incoming duel invites */
+.invite-list { margin-bottom: 12px; display: flex; flex-direction: column; gap: 7px; }
+
+.invite-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 12px;
+  border: 1.5px solid var(--gold-border);
+  border-radius: 10px;
+  background: var(--line);
+  animation: slideIn 0.3s ease;
+}
+
+.invite-text { font-size: 13.5px; }
+.invite-text b { color: var(--gold); }
+.invite-row .small-cta { padding: 7px 13px; flex-shrink: 0; }
+
+/* friends card */
+.fr-code-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+
+.fr-code-label { font-size: 13px; font-weight: 700; color: var(--muted); }
+.fr-add-row { max-width: 320px; }
+.fr-msg { margin-top: 7px; font-size: 12.5px; font-weight: 600; }
+
+.fr-section { margin-top: 13px; }
+
+.fr-sub {
+  font-size: 11.5px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+
+.fr-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 10px;
+  border: 1px solid var(--card-border);
+  border-radius: 10px;
+  background: var(--line);
+}
+
+.fr-row + .fr-row { margin-top: 6px; }
+.fr-row.pending { opacity: 0.65; }
+.fr-who { font-size: 13.5px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fr-actions { display: flex; gap: 6px; flex-shrink: 0; }
+.fr-actions .small-cta { padding: 6px 11px; font-size: 12.5px; }
+.fr-pending { font-size: 12px; color: var(--muted); flex-shrink: 0; }
+
+@media (max-width: 560px) {
+  .invite-row { flex-direction: column; align-items: stretch; text-align: center; }
 }
 
 .online-box {
@@ -1385,7 +1454,126 @@ body {
 
 .online-result { animation: slideIn 0.35s ease; }
 
+.duel-bar {
+  max-width: 980px;
+  margin: 14px auto 0;
+  padding: 9px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  background: var(--card-bg);
+  border: 1.5px solid var(--gold-border);
+  border-radius: 12px;
+  animation: slideIn 0.35s ease;
+}
+
+.duel-bar-label { font-size: 13px; font-weight: 700; color: var(--muted); }
+
+.duel-bar-code {
+  font-size: 19px;
+  font-weight: 900;
+  letter-spacing: 4px;
+  color: var(--gold);
+  background: var(--line);
+  border: 1px solid var(--card-border);
+  border-radius: 9px;
+  padding: 5px 14px;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.duel-bar-code:hover { border-color: var(--gold-border); }
+
 .duel-share { text-align: center; }
+
+/* live waiting indicator */
+.live-dot {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--green, #3aa655);
+  margin-right: 4px;
+  animation: livePulse 1.4s ease-in-out infinite;
+}
+
+@keyframes livePulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.35; transform: scale(0.7); }
+}
+
+/* showdown arena */
+.duel-arena { text-align: center; }
+.duel-arena h2 { margin-bottom: 4px; }
+.sd-desc { margin-bottom: 12px; }
+.duel-arena .live-match { margin: 0 auto; text-align: left; }
+
+.sd-forms {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11.5px;
+  color: var(--muted);
+  margin: 2px 2px 6px;
+}
+
+.showdown .duel-verdict { margin: 10px 0 6px; }
+.sd-pen-note { font-size: 13px; font-weight: 600; opacity: 0.8; }
+
+/* my duels list */
+.my-duels { margin-top: 16px; border-top: 1px dashed var(--card-border); padding-top: 12px; }
+
+.md-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 14px;
+  margin-bottom: 8px;
+}
+
+.md-record {
+  font-size: 12.5px;
+  font-weight: 800;
+  color: var(--gold);
+  background: var(--line);
+  border: 1px solid var(--card-border);
+  border-radius: 999px;
+  padding: 3px 10px;
+}
+
+.md-item + .md-item { margin-top: 6px; }
+
+.md-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 11px;
+  background: var(--line);
+  border: 1px solid var(--card-border);
+  border-radius: 10px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--text);
+  text-align: left;
+}
+
+.md-row:hover { border-color: var(--gold-border); }
+.md-row.won { border-left: 4px solid var(--green, #3aa655); }
+.md-row.lost { border-left: 4px solid var(--red); }
+
+.md-code { font-weight: 900; letter-spacing: 2px; color: var(--gold); }
+.md-vs { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }
+.md-status { font-size: 12px; font-weight: 700; white-space: nowrap; }
+
+.md-item > .live-match,
+.md-item > .duel-compare { margin-top: 8px; }
+
+@media (max-width: 560px) {
+  .md-vs { font-size: 12px; }
+  .sd-forms { font-size: 10.5px; }
+}
 
 .duel-code {
   font-size: 36px;
@@ -1771,6 +1959,102 @@ body {
 
 .donate-reminder:hover { color: var(--gold); border-color: var(--gold-border); }
 
+/* ---------- synced duels: timer + steal phase ---------- */
+.draft-timer {
+  font-size: 15px;
+  font-weight: 900;
+  letter-spacing: 1px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--card-border);
+  background: var(--card);
+  font-variant-numeric: tabular-nums;
+}
+.draft-timer.low { color: #d33; border-color: #d33; animation: timer-blink 1s infinite; }
+@keyframes timer-blink { 50% { opacity: 0.45; } }
+
+.duelsync { max-width: 720px; margin: 18px auto 0; }
+
+.steal-board {
+  background: var(--card);
+  border: 1px solid var(--card-border);
+  border-radius: 16px;
+  padding: 20px 18px;
+}
+.steal-board h2 { margin: 0 0 6px; font-size: 21px; }
+.wait-board { text-align: center; padding: 34px 18px; }
+.wait-board .ghost { margin-top: 14px; }
+.duel-wait { margin-top: 10px; }
+
+.steal-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.steal-desc { margin: 4px 0 12px; }
+
+.steal-tabs { display: flex; gap: 7px; margin-bottom: 8px; flex-wrap: wrap; }
+.steal-tab {
+  flex: 1;
+  min-width: 110px;
+  padding: 9px 10px;
+  border-radius: 11px;
+  border: 2px solid var(--card-border);
+  background: var(--card);
+  font-weight: 800;
+  font-size: 13.5px;
+  cursor: pointer;
+  color: inherit;
+}
+.steal-tab.on { border-color: var(--gold-border, #c9a23c); background: var(--line); }
+.steal-tab.full b { color: var(--green, #3aa655); }
+.steal-tab b { margin-left: 4px; }
+
+.steal-hint { font-size: 12.5px; color: var(--muted); margin: 4px 2px 10px; }
+
+.steal-list {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  max-height: 380px;
+  overflow-y: auto;
+}
+.steal-chip {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1.5px solid var(--card-border);
+  background: var(--card);
+  cursor: pointer;
+  font-size: 13px;
+  text-align: left;
+  color: inherit;
+}
+.steal-chip:hover:not(:disabled) { border-color: var(--muted); }
+.steal-chip:disabled { opacity: 0.45; cursor: not-allowed; }
+.steal-chip.marked { border-color: var(--gold-border, #c9a23c); background: var(--line); }
+.steal-mark { font-size: 14px; }
+.steal-pos { font-size: 10.5px; font-weight: 800; color: var(--muted); min-width: 26px; }
+.steal-name { font-weight: 700; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.steal-meta { font-size: 12px; font-weight: 800; color: var(--muted); white-space: nowrap; }
+
+.steal-submit { width: 100%; margin-top: 14px; }
+
+.steal-res-list { display: flex; flex-direction: column; gap: 7px; margin-top: 12px; }
+.steal-res {
+  padding: 9px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--card-border);
+  background: var(--line);
+  font-size: 13.5px;
+  animation: steal-pop 0.45s ease;
+}
+.steal-res.mine { border-left: 4px solid var(--green, #3aa655); }
+.steal-res.theirs { border-left: 4px solid #c0392b; }
+.steal-res.blocked { opacity: 0.92; }
+@keyframes steal-pop {
+  from { transform: translateY(8px) scale(0.97); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+
 /* ---------- responsive ---------- */
 @media (max-width: 520px) {
   .app { padding: 0 10px 28px; }
@@ -1799,4 +2083,8 @@ body {
   .result-actions { flex-direction: column; }
   .result-actions .cta, .result-actions .ghost { width: 100%; }
   .sim-controls .cta { flex: 1; }
+  .steal-list { grid-template-columns: 1fr; max-height: 320px; }
+  .steal-tab { min-width: 0; font-size: 12px; padding: 8px 6px; }
+  .steal-submit { font-size: 15px; }
+  .draft-timer { font-size: 13px; padding: 4px 9px; }
 }

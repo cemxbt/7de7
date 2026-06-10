@@ -232,3 +232,31 @@ export function reroll(game: GameState, all: Squad[], axis: RerollAxis, free = f
 export function findSquad(all: Squad[], sel: string, copa: number): Squad | undefined {
   return all.find(s => s.sel === sel && s.copa === copa);
 }
+
+/**
+ * Fills the remaining slots automatically (used when a timed duel draft
+ * expires): keeps rolling and placing the strongest eligible player.
+ */
+export function autoCompleteGame(game: GameState, all: Squad[]): GameState {
+  let g = game;
+  for (let guard = 0; guard < 400; guard++) {
+    const empty = g.draft.filled.some(f => f === null);
+    if (!empty) break;
+    if (!g.current) {
+      g = roll(g, all);
+      continue;
+    }
+    const squad = findSquad(all, g.current.sel, g.current.copa);
+    const candidates = (squad?.squad ?? []).filter(p => isPlayerSelectable(g.draft, p));
+    if (candidates.length === 0) {
+      g = reroll(g, all, 'team', true); // emergency reroll, free of charge
+      continue;
+    }
+    const best = candidates.reduce((a, b) => (b.f > a.f ? b : a));
+    const slotPos = eligiblePositions(g.draft, best)[0];
+    const slotIdx = g.draft.slots.findIndex((s, i) => s.pos === slotPos && g.draft.filled[i] === null);
+    const placed: PlacedPlayer = { ...best, sel: g.current.sel, copa: g.current.copa };
+    g = { ...g, draft: applyChoose(g.draft, placed, slotIdx), current: null };
+  }
+  return g;
+}

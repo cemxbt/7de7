@@ -5,6 +5,10 @@ import {
   fetchLeaderboard, signIn, signOut, signUp, upsertCloudProfile,
   type LeaderboardRow, type User,
 } from '../online';
+import {
+  acceptRequest, addFriendByCode, fetchFriendships, fetchMyFriendCode, removeFriendship,
+  type Friendship,
+} from '../friends';
 import type { Lang, StringKey } from '../i18n';
 import { t } from '../i18n';
 
@@ -16,6 +20,7 @@ interface Props {
   setHistory: (h: HistoryEntry[]) => void;
   stats: Stats;
   user: User | null;
+  onInviteFriend: (friendId: string) => Promise<void>;
   onBack: () => void;
 }
 
@@ -85,6 +90,140 @@ function AccountCard({ lang, user }: { lang: Lang; user: User | null }) {
   );
 }
 
+function FriendsCard({ lang, user, onInvite }: {
+  lang: Lang;
+  user: User;
+  onInvite: (friendId: string) => Promise<void>;
+}) {
+  const [myCode, setMyCode] = useState<string | null>(null);
+  const [rows, setRows] = useState<Friendship[] | null>(null);
+  const [code, setCode] = useState('');
+  const [msg, setMsg] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [inviting, setInviting] = useState<string | null>(null);
+
+  const reload = () => fetchFriendships(user.id).then(setRows).catch(() => setRows([]));
+
+  useEffect(() => {
+    fetchMyFriendCode(user.id).then(setMyCode).catch(() => { /* offline */ });
+    reload();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user.id]);
+
+  const copyCode = async () => {
+    if (!myCode) return;
+    try {
+      await navigator.clipboard.writeText(myCode);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch { /* clipboard unavailable */ }
+  };
+
+  const add = async () => {
+    setBusy(true);
+    setMsg(null);
+    try {
+      const res = await addFriendByCode(user.id, code);
+      setMsg(res === 'accepted' ? `✅ ${t('frAccepted', lang)}` : res === 'exists' ? t('frExists', lang) : `📨 ${t('frSent', lang)}`);
+      setCode('');
+      reload();
+    } catch (e) {
+      const m = e instanceof Error ? e.message : '';
+      setMsg(m === 'self' ? t('frSelf', lang) : t('frNotFound', lang));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const invite = async (friendId: string) => {
+    setInviting(friendId);
+    try {
+      await onInvite(friendId);
+    } catch {
+      setMsg(t('duelCreateErr', lang));
+      setInviting(null);
+    }
+  };
+
+  const incoming = (rows ?? []).filter(r => r.status === 'pending' && r.addressee === user.id);
+  const outgoing = (rows ?? []).filter(r => r.status === 'pending' && r.requester === user.id);
+  const friends = (rows ?? []).filter(r => r.status === 'accepted');
+
+  const other = (r: Friendship) =>
+    r.requester === user.id
+      ? { id: r.addressee, p: r.addressee_profile }
+      : { id: r.requester, p: r.requester_profile };
+
+  return (
+    <section className="card">
+      <h2>👥 {t('friends', lang)}</h2>
+
+      <div className="fr-code-row">
+        <span className="fr-code-label">{t('frMyCode', lang)}</span>
+        <button className="duel-bar-code" onClick={copyCode} title={t('copied', lang)}>
+          {myCode ?? '······'} {copied ? '✓' : '📋'}
+        </button>
+      </div>
+
+      <div className="duel-join-row fr-add-row">
+        <input
+          type="text"
+          maxLength={6}
+          placeholder={t('frCodePh', lang)}
+          value={code}
+          onChange={e => { setCode(e.target.value.toUpperCase()); setMsg(null); }}
+        />
+        <button className="ghost small" onClick={add} disabled={busy || code.trim().length < 6}>
+          {busy ? '…' : `➕ ${t('frAdd', lang)}`}
+        </button>
+      </div>
+      {msg && <p className="fr-msg">{msg}</p>}
+
+      {incoming.length > 0 && (
+        <div className="fr-section">
+          <div className="fr-sub">📨 {t('frRequests', lang)}</div>
+          {incoming.map(r => (
+            <div key={r.id} className="fr-row">
+              <span className="fr-who">{r.requester_profile?.avatar ?? '⚽'} <b>{r.requester_profile?.name || t('lbAnon', lang)}</b></span>
+              <span className="fr-actions">
+                <button className="ghost small" onClick={() => acceptRequest(r.id).then(reload)}>✅ {t('frAccept', lang)}</button>
+                <button className="ghost small" onClick={() => removeFriendship(r.id).then(reload)}>✕</button>
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="fr-section">
+        <div className="fr-sub">{t('frList', lang)}</div>
+        {friends.length === 0 ? (
+          <p className="history-empty">{t('frEmpty', lang)}</p>
+        ) : friends.map(r => {
+          const o = other(r);
+          return (
+            <div key={r.id} className="fr-row">
+              <span className="fr-who">{o.p?.avatar ?? '⚽'} <b>{o.p?.name || t('lbAnon', lang)}</b></span>
+              <span className="fr-actions">
+                <button className="cta small-cta" onClick={() => invite(o.id)} disabled={inviting === o.id}>
+                  {inviting === o.id ? '…' : `⚔️ ${t('frChallenge', lang)}`}
+                </button>
+                <button className="ghost small" onClick={() => removeFriendship(r.id).then(reload)} title={t('frRemove', lang)}>✕</button>
+              </span>
+            </div>
+          );
+        })}
+        {outgoing.length > 0 && outgoing.map(r => (
+          <div key={r.id} className="fr-row pending">
+            <span className="fr-who">{r.addressee_profile?.avatar ?? '⚽'} <b>{r.addressee_profile?.name || t('lbAnon', lang)}</b></span>
+            <span className="fr-pending">⏳ {t('frPending', lang)}</span>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function LeaderboardCard({ lang }: { lang: Lang }) {
   const [rows, setRows] = useState<LeaderboardRow[] | null>(null);
 
@@ -126,7 +265,7 @@ const STAGE_KEY: Record<string, StringKey> = {
   R16: 'stageR16', QF: 'stageQF', SF: 'stageSF', F: 'stageF',
 };
 
-export default function ProfileScreen({ lang, profile, setProfile, history, setHistory, stats, user, onBack }: Props) {
+export default function ProfileScreen({ lang, profile, setProfile, history, setHistory, stats, user, onInviteFriend, onBack }: Props) {
   const [confirmClear, setConfirmClear] = useState(false);
 
   const update = (patch: Partial<Profile>) => {
@@ -169,6 +308,8 @@ export default function ProfileScreen({ lang, profile, setProfile, history, setH
       </section>
 
       <AccountCard lang={lang} user={user} />
+
+      {user && <FriendsCard lang={lang} user={user} onInvite={onInviteFriend} />}
 
       <LeaderboardCard lang={lang} />
 

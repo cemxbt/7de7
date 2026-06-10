@@ -14,13 +14,21 @@ import Donate from './components/Donate';
 import ProfileScreen from './components/ProfileScreen';
 import { loadHistory, loadProfile, pushHistory, type HistoryEntry, type Profile } from './profile';
 import { insertCampaign, supabase, syncLocalHistoryOnce, upsertCloudProfile, type User } from './online';
-import { createDuel, dailySeed, joinDuel, submitDaily, toChallengeResult, type ChallengeResult, type Duel } from './challenge';
-import { DailyBoardCard, DuelComparePanel, DuelSharePanel } from './components/OnlinePanels';
+import {
+  DRAFT_SECONDS, claimDuel, createDuel, createInviteDuel, dailySeed, duelPlaySeed,
+  fillDuelResult, finalDraftState, findOpenDuel, joinDuel, submitDaily, submitDuelDraft,
+  submitWeekly, toChallengeResult, weeklySeed,
+  type ChallengeResult, type Duel, type DuelSide, type DuelTeam, type StealOutcome,
+} from './challenge';
+import { BoardCard, DuelCodeBar, DuelLivePanel } from './components/OnlinePanels';
+import DuelSync from './components/DuelSync';
+
+type DuelVariant = 'code' | 'quick' | 'invite';
 
 type Challenge =
   | { kind: 'daily' }
-  | { kind: 'duel-create' }
-  | { kind: 'duel-join'; duel: Duel }
+  | { kind: 'weekly' }
+  | { kind: 'duel'; side: DuelSide; id: string; code: string; seed: string; mode: Mode; variant: DuelVariant }
   | null;
 
 export interface Stats {
@@ -43,7 +51,7 @@ type Theme = 'light' | 'dark';
 export default function App() {
   const [lang, setLang] = useState<Lang>(() => (localStorage.getItem('7de7-lang') as Lang) || 'en');
   const [theme, setTheme] = useState<Theme>(() => (localStorage.getItem('7de7-theme') as Theme) || 'light');
-  const [screen, setScreen] = useState<'setup' | 'draft' | 'reveal' | 'profile'>('setup');
+  const [screen, setScreen] = useState<'setup' | 'draft' | 'duelsync' | 'reveal' | 'profile'>('setup');
   const [profile, setProfile] = useState<Profile>(loadProfile);
   const [history, setHistory] = useState<HistoryEntry[]>(loadHistory);
   const [user, setUser] = useState<User | null>(null);
@@ -61,8 +69,8 @@ export default function App() {
   const [stats, setStats] = useState<Stats>(loadStats);
 
   const [challenge, setChallenge] = useState<Challenge>(null);
-  const [duelCode, setDuelCode] = useState<string | null>(null); // code of a duel I created
   const [myChallengeResult, setMyChallengeResult] = useState<ChallengeResult | null>(null);
+  const [myTeam, setMyTeam] = useState<DuelTeam | null>(null); // my published duel draft
   const urlDuelCode = new URLSearchParams(window.location.search).get('duel') ?? '';
 
   useEffect(() => {
@@ -96,8 +104,8 @@ export default function App() {
 
   const launch = (seed: string, m: Mode, ch: Challenge) => {
     setChallenge(ch);
-    setDuelCode(null);
     setMyChallengeResult(null);
+    setMyTeam(null);
     setGame(createGame(seed, formation, style, m));
     setResult(null);
     setScreen('draft');
@@ -105,10 +113,68 @@ export default function App() {
 
   const startGame = () => launch(randomSeed(), mode, null);
   const startDaily = () => launch(dailySeed(), 'classic', { kind: 'daily' });
-  const startDuelCreate = () => launch(randomSeed(), mode, { kind: 'duel-create' });
-  const startDuelJoin = (duel: Duel) => launch(duel.seed, duel.mode, { kind: 'duel-join', duel });
+  const startWeekly = () => launch(weeklySeed(), 'hardcore', { kind: 'weekly' });
+  // Creates the duel room first so the share code is visible from the very start.
+  const startDuelCreate = async () => {
+    if (!user) return;
+    const seed = randomSeed();
+    const { id, code } = await createDuel(user.id, seed, mode);
+    launch(duelPlaySeed(seed, 'creator'), mode, { kind: 'duel', side: 'creator', id, code, seed, mode, variant: 'code' });
+  };
+  // Joining claims the seat right away so the duel is locked to the two of you.
+  const startDuelJoin = async (duel: Duel) => {
+    if (!user) return;
+    if (!duel.opponent) await claimDuel(duel.id, user.id).catch(() => { /* already claimed */ });
+    launch(duelPlaySeed(duel.seed, 'opponent'), duel.mode, {
+      kind: 'duel', side: 'opponent', id: duel.id, code: duel.code, seed: duel.seed, mode: duel.mode, variant: 'code',
+    });
+  };
+  // Quick match: claim someone waiting in the pool, or open a new spot yourself.
+  const startQuickMatch = async () => {
+    if (!user) return;
+    const found = await findOpenDuel(user.id);
+    if (found) {
+      await startDuelJoin(found);
+      return;
+    }
+    const seed = randomSeed();
+    const { id, code } = await createDuel(user.id, seed, 'classic', true);
+    launch(duelPlaySeed(seed, 'creator'), 'classic', { kind: 'duel', side: 'creator', id, code, seed, mode: 'classic', variant: 'quick' });
+  };
+  // Challenge a friend directly: the duel lands in their incoming invites.
+  const startFriendInvite = async (friendId: string) => {
+    if (!user) return;
+    const seed = randomSeed();
+    const { id, code } = await createInviteDuel(user.id, friendId, seed, mode);
+    launch(duelPlaySeed(seed, 'creator'), mode, { kind: 'duel', side: 'creator', id, code, seed, mode, variant: 'invite' });
+  };
 
+  // Draft finished. Duels publish the squad and enter the synced steal phase;
+  // everything else simulates the tournament right away.
   const startTournament = (draft: DraftState, seed: string) => {
+    if (challenge?.kind === 'duel') {
+      const team: DuelTeam = {
+        formation: draft.formation,
+        style: draft.style,
+        team: draft.filled.filter((p): p is NonNullable<typeof p> => p !== null),
+      };
+      setMyTeam(team);
+      submitDuelDraft(challenge.id, challenge.side, team).catch(() => { /* offline */ });
+      setScreen('duelsync');
+      return;
+    }
+    runTournament(draft, seed);
+  };
+
+  // After the steal phase: rebuild my draft with the final XI and play the cup.
+  const continueDuel = (outcome: StealOutcome) => {
+    if (!myTeam || challenge?.kind !== 'duel') return;
+    const finalXI = challenge.side === 'creator' ? outcome.creatorFinal : outcome.opponentFinal;
+    const draft = finalDraftState(myTeam, finalXI, challenge.mode);
+    runTournament(draft, duelPlaySeed(challenge.seed, challenge.side));
+  };
+
+  const runTournament = (draft: DraftState, seed: string) => {
     if (!squads) return;
     const res = simulateCampaign(draft, seed, squads);
     const next: Stats = {
@@ -124,14 +190,16 @@ export default function App() {
     if (user && list[0]) insertCampaign(user.id, list[0]).catch(() => { /* offline */ });
 
     if (challenge && user) {
-      const cr = toChallengeResult(res, draft.mode, draft.formation);
+      const cr = toChallengeResult(res, draft);
       setMyChallengeResult(cr);
       if (challenge.kind === 'daily') {
         submitDaily(user.id, cr).catch(() => { /* offline or already played */ });
-      } else if (challenge.kind === 'duel-create') {
-        createDuel(user.id, res.seed, draft.mode, cr).then(setDuelCode).catch(() => { /* offline */ });
-      } else if (challenge.kind === 'duel-join') {
-        joinDuel(challenge.duel.id, user.id, cr).catch(() => { /* offline or raced */ });
+      } else if (challenge.kind === 'weekly') {
+        submitWeekly(user.id, cr).catch(() => { /* offline or already played */ });
+      } else if (challenge.kind === 'duel' && challenge.side === 'creator') {
+        fillDuelResult(challenge.id, cr).catch(() => { /* offline */ });
+      } else if (challenge.kind === 'duel') {
+        joinDuel(challenge.id, user.id, cr).catch(() => { /* offline or raced */ });
       }
     }
 
@@ -188,10 +256,17 @@ export default function App() {
           user={user}
           urlDuelCode={urlDuelCode}
           onDaily={startDaily}
+          onWeekly={startWeekly}
           onDuelCreate={startDuelCreate}
           onDuelJoin={startDuelJoin}
+          onQuickMatch={startQuickMatch}
           onNeedLogin={() => setScreen('profile')}
         />
+      )}
+
+      {squads && (screen === 'draft' || screen === 'duelsync' || screen === 'reveal')
+        && challenge?.kind === 'duel' && challenge.side === 'creator' && (
+        <DuelCodeBar lang={lang} code={challenge.code} variant={challenge.variant} />
       )}
 
       {squads && screen === 'draft' && game && (
@@ -201,6 +276,18 @@ export default function App() {
           initialGame={game}
           onSimulate={startTournament}
           onBack={() => setScreen('setup')}
+          timeLimit={challenge?.kind === 'duel' ? DRAFT_SECONDS : undefined}
+        />
+      )}
+
+      {squads && screen === 'duelsync' && challenge?.kind === 'duel' && myTeam && (
+        <DuelSync
+          lang={lang}
+          code={challenge.code}
+          side={challenge.side}
+          myTeam={myTeam}
+          onContinue={continueDuel}
+          onAbort={() => { setChallenge(null); setScreen('setup'); }}
         />
       )}
 
@@ -213,6 +300,7 @@ export default function App() {
           setHistory={setHistory}
           stats={stats}
           user={user}
+          onInviteFriend={startFriendInvite}
           onBack={() => setScreen('setup')}
         />
       )}
@@ -225,9 +313,17 @@ export default function App() {
           onPlayAgain={() => setScreen('setup')}
           onDonate={() => setDonateOpen(true)}
           footer={
-            challenge?.kind === 'daily' && myChallengeResult ? <DailyBoardCard lang={lang} />
-            : challenge?.kind === 'duel-create' && duelCode ? <DuelSharePanel lang={lang} code={duelCode} />
-            : challenge?.kind === 'duel-join' && myChallengeResult ? <DuelComparePanel lang={lang} duel={challenge.duel} mine={myChallengeResult} />
+            challenge?.kind === 'daily' && myChallengeResult ? <BoardCard lang={lang} board="daily" />
+            : challenge?.kind === 'weekly' && myChallengeResult ? <BoardCard lang={lang} board="weekly" />
+            : challenge?.kind === 'duel' ? (
+              <DuelLivePanel
+                lang={lang}
+                code={challenge.code}
+                viewer={challenge.side}
+                variant={challenge.side === 'creator' ? challenge.variant : undefined}
+                onRematch={startDuelCreate}
+              />
+            )
             : null
           }
         />

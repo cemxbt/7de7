@@ -269,6 +269,45 @@ function simShootout(rng: Rng, iWin: boolean, mine: Player[], theirs: Player[]):
     : { me: [0, 0, 0, 0, 0], them: [1, 0, 0, 0, 0], meNames: kickerNames(mine, 5), themNames: kickerNames(theirs, 5), score: '0–1' };
 }
 
+// ---------- duel showdown (your XI vs another player's XI) ----------
+
+export interface ShowdownSide {
+  attack: number;
+  defense: number;
+  players: Player[];
+}
+
+export interface ShowdownMatch {
+  gf: number; // side A goals
+  ga: number; // side B goals
+  goals: GoalEvent[]; // opp=true means side B
+  events: MatchEvent[];
+  pens?: PenaltyShootout; // "me" = side A
+  aWins: boolean;
+}
+
+/** Deterministic head-to-head between two drafted squads (knockout rules: always a winner). */
+export function simulateShowdown(a: ShowdownSide, b: ShowdownSide, seed: string): ShowdownMatch {
+  const rng = rngFromSeed(`${seed}:duel`);
+  const gf = poisson(rng, lambda(a.attack, b.defense));
+  const ga = poisson(rng, lambda(b.attack, a.defense));
+  const scorers = pickScorers(rngFromSeed(`${seed}:duel:ga`), a.players, gf, { isKnockout: true });
+  const conceded = pickScorers(rngFromSeed(`${seed}:duel:gb`), b.players, ga, { isKnockout: true });
+  const goals = buildGoals(rngFromSeed(`${seed}:duel:min`), scorers, conceded);
+  const events = buildEvents(rngFromSeed(`${seed}:duel:ev`), goals, a.players, b.players);
+
+  let aWins = gf > ga;
+  let pens: PenaltyShootout | undefined;
+  if (gf === ga) {
+    const avgA = (a.attack + a.defense) / 2;
+    const avgB = (b.attack + b.defense) / 2;
+    const p = clamp(0.5 + (avgA - avgB) * PENALTY.slope, PENALTY.min, PENALTY.max);
+    aWins = rngFromSeed(`${seed}:duel:coin`)() < p;
+    pens = simShootout(rngFromSeed(`${seed}:duel:pen`), aWins, a.players, b.players);
+  }
+  return { gf, ga, goals, events, pens, aWins };
+}
+
 // ---------- opponent identities (real historical squads by strength band) ----------
 
 const BANDS_2026: Band[] = BANDS.filter(b => b.copa === 2026);
