@@ -4,13 +4,17 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { COUNTRIES } from '../data/countries';
 import {
-  STEAL_N, STEAL_SECONDS, defaultPicks, duelHeartbeat, fetchDuel, resolveSteals,
-  seenRecently, submitDuelSteal,
+  STEAL_N, STEAL_SECONDS, defaultPicks, duelHeartbeat, fetchDuel, finalDraftState,
+  resolveSteals, seenRecently, submitDuelSteal,
   type Duel, type DuelSide, type DuelTeam, type StealOutcome, type StealPicks,
 } from '../challenge';
+import { ratings } from '../game/engine';
 import type { PlacedPlayer } from '../game/types';
 import type { Lang } from '../i18n';
 import { POS_LABEL, t } from '../i18n';
+
+const avgOf = (xs: PlacedPlayer[]) =>
+  xs.length ? Math.round(xs.reduce((a, p) => a + p.f, 0) / xs.length) : 0;
 
 interface Props {
   lang: Lang;
@@ -24,16 +28,18 @@ interface Props {
 
 const flagOf = (p: PlacedPlayer) => COUNTRIES[p.sel]?.flag ?? '';
 
-function PlayerChip({ p, lang, mark, onClick, disabled }: {
+function PlayerChip({ p, lang, mark, risk, onClick, disabled }: {
   p: PlacedPlayer;
   lang: Lang;
   mark?: string;
+  risk?: boolean;
   onClick?: () => void;
   disabled?: boolean;
 }) {
   return (
-    <button className={`steal-chip ${mark ? 'marked' : ''}`} onClick={onClick} disabled={disabled || !onClick}>
+    <button className={`steal-chip ${mark ? 'marked' : ''} ${risk && !mark ? 'risk' : ''}`} onClick={onClick} disabled={disabled || !onClick}>
       {mark && <span className="steal-mark">{mark}</span>}
+      {risk && !mark && <span className="steal-mark">⚠️</span>}
       <span className="steal-pos">{POS_LABEL[p.pos[0]][lang]}</span>
       <span className="steal-name">{p.leg && '⭐'}{p.n}</span>
       <span className="steal-meta">{flagOf(p)} {p.f}</span>
@@ -43,11 +49,12 @@ function PlayerChip({ p, lang, mark, onClick, disabled }: {
 
 type StealTab = 'ban' | 'steal' | 'give';
 
-function StealPicker({ lang, mine, theirs, rivalName, onSubmit }: {
+function StealPicker({ lang, mine, theirs, rivalName, myName, onSubmit }: {
   lang: Lang;
   mine: PlacedPlayer[];
   theirs: PlacedPlayer[];
   rivalName: string;
+  myName: string;
   onSubmit: (picks: StealPicks) => void;
 }) {
   const [tab, setTab] = useState<StealTab>('ban');
@@ -110,6 +117,13 @@ function StealPicker({ lang, mine, theirs, rivalName, onSubmit }: {
     return undefined;
   };
 
+  // while protecting: flag my best unprotected players — these are easy prey
+  const atRisk = useMemo(() => {
+    if (tab !== 'ban') return new Set<string>();
+    const exposed = mine.filter(p => !picks.ban.includes(p.id));
+    return new Set(exposed.sort((a, b) => b.f - a.f).slice(0, STEAL_N).map(p => p.id));
+  }, [tab, mine, picks.ban]);
+
   const tabs: { id: StealTab; icon: string; label: string; count: number }[] = [
     { id: 'ban', icon: '🛡', label: t('stealBan', lang), count: picks.ban.length },
     { id: 'steal', icon: '🎯', label: t('stealPick', lang), count: picks.steal.length },
@@ -121,6 +135,11 @@ function StealPicker({ lang, mine, theirs, rivalName, onSubmit }: {
       <div className="steal-head">
         <h2>🕵️ {t('stealTitle', lang)}</h2>
         <span className={`draft-timer ${left <= 15 ? 'low' : ''}`}>⏱ 0:{String(left).padStart(2, '0')}</span>
+      </div>
+      <div className="steal-vs">
+        <span className="steal-vs-side me">{myName} <b>{avgOf(mine)}</b></span>
+        <span className="steal-vs-x">{t('vs', lang)}</span>
+        <span className="steal-vs-side them"><b>{avgOf(theirs)}</b> {rivalName}</span>
       </div>
       <p className="ob-desc steal-desc">{t('stealDesc', lang)}</p>
 
@@ -143,6 +162,7 @@ function StealPicker({ lang, mine, theirs, rivalName, onSubmit }: {
             p={p}
             lang={lang}
             mark={markOf(p.id)}
+            risk={atRisk.has(p.id)}
             onClick={() => toggle(tab, p.id)}
             disabled={
               (tab === 'ban' && picks.give.includes(p.id)) ||
@@ -151,6 +171,7 @@ function StealPicker({ lang, mine, theirs, rivalName, onSubmit }: {
           />
         ))}
       </div>
+      {tab === 'ban' && <p className="steal-hint risk-note">⚠️ = {t('stealAtRisk', lang)}</p>}
 
       <button className="cta steal-submit" disabled={!ready} onClick={() => submit(picks)}>
         {ready ? `✅ ${t('stealSubmit', lang)}` : t('stealNeedAll', lang)}
@@ -159,15 +180,17 @@ function StealPicker({ lang, mine, theirs, rivalName, onSubmit }: {
   );
 }
 
-function ResolutionView({ lang, outcome, side, rivalName, onContinue }: {
+function ResolutionView({ lang, outcome, side, myTeam, rivalName, onContinue }: {
   lang: Lang;
   outcome: StealOutcome;
   side: DuelSide;
+  myTeam: DuelTeam;
   rivalName: string;
   onContinue: () => void;
 }) {
   const myResults = side === 'creator' ? outcome.creatorResults : outcome.opponentResults;
   const theirResults = side === 'creator' ? outcome.opponentResults : outcome.creatorResults;
+  const myFinal = side === 'creator' ? outcome.creatorFinal : outcome.opponentFinal;
   const lines = [
     ...myResults.map(r => ({ mine: true, r })),
     ...theirResults.map(r => ({ mine: false, r })),
@@ -181,6 +204,16 @@ function ResolutionView({ lang, outcome, side, rivalName, onContinue }: {
   }, [shown, lines.length]);
 
   const done = shown >= lines.length;
+
+  // before/after squad strength once the dust settles
+  const summary = useMemo(() => {
+    const before = ratings(finalDraftState(myTeam, myTeam.team, 'classic'));
+    const after = ratings(finalDraftState(myTeam, myFinal, 'classic'));
+    const incoming = new Set(myResults.flatMap(r => (r.got ? [r.got.id] : [])));
+    return { before, after, incoming };
+  }, [myTeam, myFinal, myResults]);
+
+  const delta = summary.after.overall - summary.before.overall;
 
   return (
     <div className="steal-board">
@@ -200,10 +233,29 @@ function ResolutionView({ lang, outcome, side, rivalName, onContinue }: {
           </div>
         ))}
       </div>
+
       {done && (
-        <button className="cta steal-submit" onClick={onContinue}>
-          🏟 {t('stealContinue', lang)}
-        </button>
+        <>
+          <div className="steal-final">
+            <div className="steal-final-head">
+              <b>📋 {t('stealNewSquad', lang)}</b>
+              <span className={`steal-delta ${delta > 0 ? 'up' : delta < 0 ? 'down' : ''}`}>
+                {summary.before.overall} → <b>{summary.after.overall}</b> OVR
+                {delta !== 0 && <i>{delta > 0 ? ` (+${delta})` : ` (${delta})`}</i>}
+              </span>
+            </div>
+            <div className="steal-final-list">
+              {myFinal.map(p => (
+                <span key={p.id} className={`steal-final-chip ${summary.incoming.has(p.id) ? 'new' : ''}`}>
+                  {summary.incoming.has(p.id) && '✨'}{flagOf(p)} {p.n} <b>{p.f}</b>
+                </span>
+              ))}
+            </div>
+          </div>
+          <button className="cta steal-submit" onClick={onContinue}>
+            🏟 {t('stealContinue', lang)}
+          </button>
+        </>
       )}
     </div>
   );
@@ -267,6 +319,7 @@ export default function DuelSync({ lang, code, side, myTeam, onContinue, onAbort
           lang={lang}
           outcome={outcome}
           side={side}
+          myTeam={myTeam}
           rivalName={rivalName}
           onContinue={() => onContinue(outcome, duel)}
         />
@@ -284,6 +337,7 @@ export default function DuelSync({ lang, code, side, myTeam, onContinue, onAbort
             mine={myTeam.team}
             theirs={theirDraft.team}
             rivalName={rivalName}
+            myName={t('duelYou', lang)}
             onSubmit={sendSteal}
           />
         </main>

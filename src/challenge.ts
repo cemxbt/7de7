@@ -506,14 +506,24 @@ export async function fetchMyDuels(userId: string): Promise<Duel[]> {
  * exact same match. Returns null while a side is missing or for old duels
  * without squad snapshots (those fall back to stat comparison).
  */
+/**
+ * Tournament form: how well you played your World Cup carries into the
+ * showdown as an attack/defense boost (wins, goals and the title all count).
+ */
+export function duelForm(r: ChallengeResult): number {
+  const raw = r.wins * 0.4 + r.gf * 0.08 + (r.champion ? 1.5 : 0);
+  return Math.min(4, Math.round(raw * 10) / 10);
+}
+
 export function duelShowdown(duel: Duel): ShowdownMatch | null {
   const cr = duel.creator_result;
   const or = duel.opponent_result;
   if (!cr?.team?.length || !or?.team?.length) return null;
   if (cr.attack == null || cr.defense == null || or.attack == null || or.defense == null) return null;
+  const cf = duelForm(cr), of = duelForm(or);
   return simulateShowdown(
-    { attack: cr.attack, defense: cr.defense, players: cr.team as Player[] },
-    { attack: or.attack, defense: or.defense, players: or.team as Player[] },
+    { attack: cr.attack + cf, defense: cr.defense + cf, players: cr.team as Player[] },
+    { attack: or.attack + of, defense: or.defense + of, players: or.team as Player[] },
     `SHOWDOWN:${duel.id}`,
   );
 }

@@ -1,6 +1,6 @@
 // Animated head-to-head match that settles a duel: creator's XI vs opponent's XI.
 import { useEffect, useRef, useState } from 'react';
-import type { Duel } from '../challenge';
+import { duelForm, type Duel } from '../challenge';
 import type { MatchEvent, ShowdownMatch } from '../game/sim';
 import type { Lang, StringKey } from '../i18n';
 import { t } from '../i18n';
@@ -129,9 +129,20 @@ export default function DuelShowdown({ lang, duel, match, viewer, animate = true
         <span className={`lm-team ${viewer === 'opponent' ? 'me' : 'opp'}`}>{nameB}</span>
       </div>
       <div className="sd-forms">
-        <span>{duel.creator_result?.formation} · {duel.creator_result?.overall} OVR</span>
-        <span>{duel.opponent_result?.formation} · {duel.opponent_result?.overall} OVR</span>
+        <span>
+          {duel.creator_result?.formation} · {duel.creator_result?.overall} OVR
+          {duel.creator_result && duelForm(duel.creator_result) > 0 && (
+            <i className="sd-form-chip">🔥 +{duelForm(duel.creator_result)}</i>
+          )}
+        </span>
+        <span>
+          {duel.opponent_result?.formation} · {duel.opponent_result?.overall} OVR
+          {duel.opponent_result && duelForm(duel.opponent_result) > 0 && (
+            <i className="sd-form-chip">🔥 +{duelForm(duel.opponent_result)}</i>
+          )}
+        </span>
       </div>
+      <div className="sd-form-note">🔥 = {t('formNote', lang)}</div>
       <div className="lm-clockrow">
         <span className={`lm-clock ${phase !== 'play' || minute > 90 ? 'done' : ''}`}>{clock}</span>
       </div>
