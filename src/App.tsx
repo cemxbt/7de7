@@ -14,6 +14,14 @@ import Donate from './components/Donate';
 import ProfileScreen from './components/ProfileScreen';
 import { loadHistory, loadProfile, pushHistory, type HistoryEntry, type Profile } from './profile';
 import { insertCampaign, supabase, syncLocalHistoryOnce, upsertCloudProfile, type User } from './online';
+import { createDuel, dailySeed, joinDuel, submitDaily, toChallengeResult, type ChallengeResult, type Duel } from './challenge';
+import { DailyBoardCard, DuelComparePanel, DuelSharePanel } from './components/OnlinePanels';
+
+type Challenge =
+  | { kind: 'daily' }
+  | { kind: 'duel-create' }
+  | { kind: 'duel-join'; duel: Duel }
+  | null;
 
 export interface Stats {
   played: number;
@@ -52,6 +60,11 @@ export default function App() {
   const [finalDraft, setFinalDraft] = useState<DraftState | null>(null);
   const [stats, setStats] = useState<Stats>(loadStats);
 
+  const [challenge, setChallenge] = useState<Challenge>(null);
+  const [duelCode, setDuelCode] = useState<string | null>(null); // code of a duel I created
+  const [myChallengeResult, setMyChallengeResult] = useState<ChallengeResult | null>(null);
+  const urlDuelCode = new URLSearchParams(window.location.search).get('duel') ?? '';
+
   useEffect(() => {
     loadSquads().then(setSquads).catch(() => setLoadError(true));
   }, []);
@@ -81,11 +94,19 @@ export default function App() {
     localStorage.setItem('7de7-lang', l);
   };
 
-  const startGame = () => {
-    setGame(createGame(randomSeed(), formation, style, mode));
+  const launch = (seed: string, m: Mode, ch: Challenge) => {
+    setChallenge(ch);
+    setDuelCode(null);
+    setMyChallengeResult(null);
+    setGame(createGame(seed, formation, style, m));
     setResult(null);
     setScreen('draft');
   };
+
+  const startGame = () => launch(randomSeed(), mode, null);
+  const startDaily = () => launch(dailySeed(), 'classic', { kind: 'daily' });
+  const startDuelCreate = () => launch(randomSeed(), mode, { kind: 'duel-create' });
+  const startDuelJoin = (duel: Duel) => launch(duel.seed, duel.mode, { kind: 'duel-join', duel });
 
   const startTournament = (draft: DraftState, seed: string) => {
     if (!squads) return;
@@ -101,6 +122,19 @@ export default function App() {
     const list = pushHistory(res, draft.mode, draft.formation);
     setHistory(list);
     if (user && list[0]) insertCampaign(user.id, list[0]).catch(() => { /* offline */ });
+
+    if (challenge && user) {
+      const cr = toChallengeResult(res, draft.mode, draft.formation);
+      setMyChallengeResult(cr);
+      if (challenge.kind === 'daily') {
+        submitDaily(user.id, cr).catch(() => { /* offline or already played */ });
+      } else if (challenge.kind === 'duel-create') {
+        createDuel(user.id, res.seed, draft.mode, cr).then(setDuelCode).catch(() => { /* offline */ });
+      } else if (challenge.kind === 'duel-join') {
+        joinDuel(challenge.duel.id, user.id, cr).catch(() => { /* offline or raced */ });
+      }
+    }
+
     setFinalDraft(draft);
     setResult(res);
     setScreen('reveal');
@@ -151,6 +185,12 @@ export default function App() {
           style={style} setStyle={setStyle}
           stats={stats}
           onStart={startGame}
+          user={user}
+          urlDuelCode={urlDuelCode}
+          onDaily={startDaily}
+          onDuelCreate={startDuelCreate}
+          onDuelJoin={startDuelJoin}
+          onNeedLogin={() => setScreen('profile')}
         />
       )}
 
@@ -184,6 +224,12 @@ export default function App() {
           draft={finalDraft}
           onPlayAgain={() => setScreen('setup')}
           onDonate={() => setDonateOpen(true)}
+          footer={
+            challenge?.kind === 'daily' && myChallengeResult ? <DailyBoardCard lang={lang} />
+            : challenge?.kind === 'duel-create' && duelCode ? <DuelSharePanel lang={lang} code={duelCode} />
+            : challenge?.kind === 'duel-join' && myChallengeResult ? <DuelComparePanel lang={lang} duel={challenge.duel} mine={myChallengeResult} />
+            : null
+          }
         />
       )}
 

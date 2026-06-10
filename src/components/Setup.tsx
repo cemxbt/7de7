@@ -3,6 +3,9 @@ import type { Mode, Style } from '../game/types';
 import type { Lang, StringKey } from '../i18n';
 import { POS_LABEL, t } from '../i18n';
 import type { Stats } from '../App';
+import type { Duel } from '../challenge';
+import type { User } from '../online';
+import { OnlineSection } from './OnlinePanels';
 
 interface Props {
   lang: Lang;
@@ -14,6 +17,12 @@ interface Props {
   setStyle: (s: Style) => void;
   stats: Stats;
   onStart: () => void;
+  user: User | null;
+  urlDuelCode: string;
+  onDaily: () => void;
+  onDuelCreate: () => void;
+  onDuelJoin: (duel: Duel) => void;
+  onNeedLogin: () => void;
 }
 
 const MODES: { id: Mode; icon: string; nameKey: StringKey; descKey: StringKey }[] = [
@@ -29,7 +38,10 @@ const STYLES: { id: Style; icon: string; key: StringKey }[] = [
   { id: 'offensive', icon: '⚡', key: 'styleOff' },
 ];
 
-export default function Setup({ lang, mode, setMode, formation, setFormation, style, setStyle, stats, onStart }: Props) {
+export default function Setup({
+  lang, mode, setMode, formation, setFormation, style, setStyle, stats, onStart,
+  user, urlDuelCode, onDaily, onDuelCreate, onDuelJoin, onNeedLogin,
+}: Props) {
   return (
     <main className="setup">
       <div className="hero">
@@ -115,6 +127,16 @@ export default function Setup({ lang, mode, setMode, formation, setFormation, st
       <button className="cta" onClick={onStart}>
         🎲 {t('start', lang)}
       </button>
+
+      <OnlineSection
+        lang={lang}
+        user={user}
+        initialCode={urlDuelCode}
+        onDaily={onDaily}
+        onDuelCreate={onDuelCreate}
+        onDuelJoin={onDuelJoin}
+        onNeedLogin={onNeedLogin}
+      />
 
       {stats.played > 0 && (
         <section className="card stats">

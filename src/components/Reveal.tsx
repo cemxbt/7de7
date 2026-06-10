@@ -11,6 +11,7 @@ interface Props {
   draft: DraftState;
   onPlayAgain: () => void;
   onDonate: () => void;
+  footer?: React.ReactNode;
 }
 
 const STAGE_KEY: Record<Stage, StringKey> = {
@@ -346,7 +347,7 @@ const loadSpeed = (): Speed => {
   return s === 'slow' || s === 'fast' ? s : 'normal';
 };
 
-export default function Reveal({ lang, result, draft, onPlayAgain, onDonate }: Props) {
+export default function Reveal({ lang, result, draft, onPlayAgain, onDonate, footer }: Props) {
   const [drawDone, setDrawDone] = useState(false);
   const [step, setStep] = useState(0); // completed fixtures
   const [live, setLive] = useState(false); // kicks off after the group draw
@@ -549,6 +550,8 @@ export default function Reveal({ lang, result, draft, onPlayAgain, onDonate }: P
           </button>
         </div>
       )}
+
+      {finished && footer}
     </main>
   );
 }
