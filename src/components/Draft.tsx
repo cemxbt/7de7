@@ -34,6 +34,7 @@ export default function Draft({ lang, squads, initialGame, onSimulate, onBack, t
   const [diceFace, setDiceFace] = useState('🎲');
   const [left, setLeft] = useState(timeLimit ?? 0);
   const [flash, setFlash] = useState<string | null>(null);
+  const [showXI, setShowXI] = useState(false);
   const submittedRef = useRef(false);
 
   // secret cheat, also available mid-duel: first time grants infinite
@@ -172,8 +173,46 @@ export default function Draft({ lang, squads, initialGame, onSimulate, onBack, t
           <span className="rating-chip atk" key={`a${attack}`}><b>{hideStats ? '?' : attack || '—'}</b> {t('attack', lang)}</span>
           <span className="rating-chip def" key={`d${defense}`}><b>{hideStats ? '?' : defense || '—'}</b> {t('defense', lang)}</span>
           <span className="rating-chip cnt" key={`c${filledCount}`}><b>{filledCount}</b>/11</span>
+          <button className="xi-btn" onClick={() => setShowXI(true)} disabled={filledCount === 0}>
+            📋 {t('myXI', lang)}
+          </button>
         </div>
       </div>
+
+      {showXI && (
+        <div className="myxi-overlay" onClick={() => setShowXI(false)}>
+          <div className="myxi-card" onClick={e => e.stopPropagation()}>
+            <div className="myxi-head">
+              <b>📋 {t('myXI', lang)} · {filledCount}/11</b>
+              <span className="myxi-ovr">{hideStats ? '?' : overall || '—'} {t('overall', lang)}</span>
+              <button className="myxi-close" onClick={() => setShowXI(false)}>✕</button>
+            </div>
+            <div className="myxi-list">
+              {draft.slots.map((slot, i) => {
+                const p = draft.filled[i];
+                const c = p ? COUNTRIES[p.sel] : null;
+                return (
+                  <div key={i} className={`myxi-row ${p ? '' : 'empty'} ${p?.leg ? 'legend' : ''}`}>
+                    <span className="myxi-pos">{POS_LABEL[slot.pos][lang]}</span>
+                    {p ? (
+                      <>
+                        <span className="myxi-flag">{c?.flag}</span>
+                        <span className="myxi-name">
+                          {p.leg && '⭐ '}{p.n}
+                          <small>{c ? c[lang] : p.sel} {p.copa}</small>
+                        </span>
+                        <span className="myxi-rating">{hideStats ? '?' : p.f}</span>
+                      </>
+                    ) : (
+                      <span className="myxi-empty">{t('emptySlot', lang)}</span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="draft-grid">
         <div className="pitch-col">

@@ -44,6 +44,8 @@ const STRINGS = {
   defense: { tr: 'Defans', en: 'Defense' },
   overall: { tr: 'Genel', en: 'Overall' },
   squadOf: { tr: 'kadrosu', en: 'squad' },
+  myXI: { tr: 'İlk 11\'im', en: 'My XI' },
+  emptySlot: { tr: 'Boş', en: 'Empty' },
   back: { tr: 'Menü', en: 'Menu' },
   legend: { tr: 'Efsane', en: 'Legend' },
   // reveal
