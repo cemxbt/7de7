@@ -1,14 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { COUNTRIES } from '../data/countries';
+import type { FormationName } from '../data/formations';
 import {
-  applyChoose, applyMove, autoCompleteGame, eligiblePositions, findSquad, isPlayerSelectable,
-  moveTargets as getMoveTargets, poolStuck, ratings, reroll, rerollOptionsAvailable, roll,
-  POS_ORDER,
+  applyChoose, applyMove, autoCompleteGame, buildGodDraft, eligiblePositions, findSquad,
+  isPlayerSelectable, moveTargets as getMoveTargets, poolStuck, ratings, reroll,
+  rerollOptionsAvailable, roll, POS_ORDER,
 } from '../game/engine';
 import type { GameState, Player, Squad, DraftState } from '../game/types';
 import type { Lang } from '../i18n';
 import { POS_LABEL, t } from '../i18n';
 import Pitch from './Pitch';
+
+const INF_REROLLS = 9999;
 
 interface Props {
   lang: Lang;
@@ -18,16 +21,48 @@ interface Props {
   onBack: () => void;
   /** timed drafts (synced duels): seconds until the squad is auto-completed */
   timeLimit?: number;
+  /** secret cheat: 1st activation = infinite wildcards, 2nd = full god squad */
+  cheatCode?: string;
+  onCheat?: () => void;
 }
 
-export default function Draft({ lang, squads, initialGame, onSimulate, onBack, timeLimit }: Props) {
+export default function Draft({ lang, squads, initialGame, onSimulate, onBack, timeLimit, cheatCode, onCheat }: Props) {
   const [game, setGame] = useState<GameState>(initialGame);
   const [selected, setSelected] = useState<Player | null>(null);
   const [moveFrom, setMoveFrom] = useState<number | null>(null);
   const [rolling, setRolling] = useState(false);
   const [diceFace, setDiceFace] = useState('🎲');
   const [left, setLeft] = useState(timeLimit ?? 0);
+  const [flash, setFlash] = useState<string | null>(null);
   const submittedRef = useRef(false);
+
+  // secret cheat, also available mid-duel: first time grants infinite
+  // wildcards, typing it again drops the strongest possible XI on the pitch
+  useEffect(() => {
+    if (!cheatCode) return;
+    let buffer = '';
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key.length !== 1 || (e.target as HTMLElement)?.tagName === 'INPUT') return;
+      buffer = (buffer + e.key.toLowerCase()).slice(-cheatCode.length);
+      if (buffer !== cheatCode) return;
+      buffer = '';
+      onCheat?.();
+      setGame(g => {
+        if (g.draft.rerollsLeft < INF_REROLLS) {
+          setFlash('⚡ GOD MODE ⚡');
+          return { ...g, draft: { ...g.draft, rerollsLeft: INF_REROLLS } };
+        }
+        setFlash('🌟 GOD SQUAD 🌟');
+        const god = buildGodDraft(squads, g.draft.formation as FormationName, g.draft.style, g.draft.mode);
+        return { ...g, draft: { ...god, rerollsLeft: INF_REROLLS }, current: null };
+      });
+      setSelected(null);
+      setMoveFrom(null);
+      setTimeout(() => setFlash(null), 2000);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [cheatCode, onCheat, squads]);
 
   // timed draft countdown: when it hits zero, finish the squad automatically
   useEffect(() => {
@@ -120,6 +155,11 @@ export default function Draft({ lang, squads, initialGame, onSimulate, onBack, t
 
   return (
     <main className="draft">
+      {flash && (
+        <div className="god-flash" aria-hidden="true">
+          <span>{flash}</span>
+        </div>
+      )}
       <div className="draft-head">
         <button className="ghost" onClick={onBack}>← {t('back', lang)}</button>
         {timeLimit !== undefined && (
@@ -191,7 +231,9 @@ export default function Draft({ lang, squads, initialGame, onSimulate, onBack, t
               {(stuck || draft.rerollsLeft > 0) && (
                 <div className={`reroll-box ${stuck ? 'stuck' : ''}`}>
                   <span className="reroll-label">
-                    {stuck ? `⚠️ ${t('rerollStuck', lang)}` : `🃏 ${t('rerollLabel', lang, { n: draft.rerollsLeft })}`}
+                    {stuck
+                      ? `⚠️ ${t('rerollStuck', lang)}`
+                      : `🃏 ${t('rerollLabel', lang, { n: draft.rerollsLeft > 900 ? '∞' : draft.rerollsLeft })}`}
                   </span>
                   <div className="reroll-btns">
                     <button className="reroll-btn" disabled={!rrAvail.team} onClick={() => doReroll('team')}>

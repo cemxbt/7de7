@@ -128,7 +128,7 @@ export default function App() {
       buffer = (buffer + e.key.toLowerCase()).slice(-SECRET_CODE.length);
       if (buffer !== SECRET_CODE) return;
       buffer = '';
-      const draft = buildGodDraft(squads, formation, style, mode);
+      const draft = { ...buildGodDraft(squads, formation, style, mode), rerollsLeft: 9999 };
       setChallenge(null);
       setMyChallengeResult(null);
       setMyTeam(null);
@@ -312,6 +312,8 @@ export default function App() {
           onSimulate={startTournament}
           onBack={() => setScreen('setup')}
           timeLimit={challenge?.kind === 'duel' ? DRAFT_SECONDS : undefined}
+          cheatCode={SECRET_CODE}
+          onCheat={() => setCheat(true)}
         />
       )}
 
