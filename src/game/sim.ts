@@ -408,9 +408,13 @@ export interface CampaignResult {
 // the other group match each round (opponent indices): G1 -> 1v2, G2 -> 0v2, G3 -> 0v1
 const OTHER_PAIR: [number, number][] = [[1, 2], [0, 2], [0, 1]];
 
-export function simulateCampaign(draft: DraftState, seed: string, all: Squad[]): CampaignResult {
+/** `handicap` shifts the team's effective strength (god-duel curse uses a heavy malus) */
+export function simulateCampaign(draft: DraftState, seed: string, all: Squad[], handicap = 0): CampaignResult {
   const upper = seed.toUpperCase();
-  const { attack, defense, overall } = ratings(draft);
+  const r = ratings(draft);
+  const overall = r.overall;
+  const attack = Math.max(1, r.attack + handicap);
+  const defense = Math.max(1, r.defense + handicap);
   const xi = draft.filled.filter((p): p is PlacedPlayer => p !== null);
   const draftedFrom = new Set(xi.map(p => `${p.sel}:${p.copa}`));
 

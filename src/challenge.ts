@@ -21,6 +21,8 @@ export interface ChallengeResult {
   attack?: number;
   defense?: number;
   team?: PlacedPlayer[];
+  // god-mode run: the showdown is rigged so this side cannot lose
+  god?: boolean;
 }
 
 export function toChallengeResult(res: CampaignResult, draft: DraftState): ChallengeResult {
@@ -551,11 +553,23 @@ export function duelShowdown(duel: Duel): ShowdownMatch | null {
   if (!cr?.team?.length || !or?.team?.length) return null;
   if (cr.attack == null || cr.defense == null || or.attack == null || or.defense == null) return null;
   const cf = duelForm(cr), of = duelForm(or);
-  return simulateShowdown(
-    { attack: cr.attack + cf, defense: cr.defense + cf, players: cr.team as Player[] },
-    { attack: or.attack + of, defense: or.defense + of, players: or.team as Player[] },
-    `SHOWDOWN:${duel.id}`,
-  );
+  const sideA = { attack: cr.attack + cf, defense: cr.defense + cf, players: cr.team as Player[] };
+  const sideB = { attack: or.attack + of, defense: or.defense + of, players: or.team as Player[] };
+
+  // god mode never loses: deterministically re-salt the seed until the god
+  // side wins (escalating its sim strength so a win is inevitable) — both
+  // clients run the same loop and land on the exact same match
+  const cg = !!cr.god, og = !!or.god;
+  if (cg !== og) {
+    for (let i = 0; i < 400; i++) {
+      const boost = 6 + Math.floor(i / 10) * 4;
+      const a = cg ? { ...sideA, attack: sideA.attack + boost, defense: sideA.defense + boost } : sideA;
+      const b = og ? { ...sideB, attack: sideB.attack + boost, defense: sideB.defense + boost } : sideB;
+      const m = simulateShowdown(a, b, `SHOWDOWN:${duel.id}${i ? `:g${i}` : ''}`);
+      if (m.aWins === cg) return m;
+    }
+  }
+  return simulateShowdown(sideA, sideB, `SHOWDOWN:${duel.id}`);
 }
 
 /** 1 creator wins, -1 opponent wins, 0 draw (only possible for legacy duels). */

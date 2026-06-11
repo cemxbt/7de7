@@ -16,7 +16,7 @@ import ProfileScreen from './components/ProfileScreen';
 import { loadHistory, loadProfile, pushHistory, type HistoryEntry, type Profile } from './profile';
 import { insertCampaign, supabase, syncLocalHistoryOnce, upsertCloudProfile, type User } from './online';
 import {
-  DRAFT_SECONDS, claimDuel, createDuel, createInviteDuel, dailySeed, duelPlaySeed,
+  DRAFT_SECONDS, STEAL_N, claimDuel, createDuel, createInviteDuel, dailySeed, duelPlaySeed,
   fillDuelResult, finalDraftState, findOpenDuel, joinDuel, submitDaily, submitDuelDraft,
   submitWeekly, toChallengeResult, weeklySeed,
   type ChallengeResult, type Duel, type DuelSide, type DuelTeam, type StealOutcome,
@@ -203,16 +203,23 @@ export default function App() {
   };
 
   // After the steal phase: rebuild my draft with the final XI and play the cup.
-  const continueDuel = (outcome: StealOutcome) => {
+  const continueDuel = (outcome: StealOutcome, duel: Duel) => {
     if (!myTeam || challenge?.kind !== 'duel') return;
     const finalXI = challenge.side === 'creator' ? outcome.creatorFinal : outcome.opponentFinal;
     const draft = finalDraftState(myTeam, finalXI, challenge.mode);
-    runTournament(draft, duelPlaySeed(challenge.seed, challenge.side));
+    // an oversized ban list is the god-mode signature: this run is cursed
+    const rivalPicks = challenge.side === 'creator' ? duel.opponent_steal : duel.creator_steal;
+    const cursed = (rivalPicks?.ban?.length ?? 0) > STEAL_N && !cheat;
+    runTournament(draft, duelPlaySeed(challenge.seed, challenge.side), cursed);
   };
 
-  const runTournament = (draft: DraftState, seed: string) => {
+  const runTournament = (draft: DraftState, seed: string, cursed = false) => {
     if (!squads) return;
-    const res = simulateCampaign(draft, seed, squads);
+    let res = simulateCampaign(draft, seed, squads, cursed ? -25 : 0);
+    // cursed runs cannot win anything: re-salt until out in groups with zero wins
+    for (let i = 1; i <= 50 && cursed && (res.wins > 0 || res.campaign.length > 3); i++) {
+      res = simulateCampaign(draft, `${seed}#${i}`, squads, -25);
+    }
     // god-mode runs are just for fun: no stats, no history, no cloud
     if (!cheat) {
       const next: Stats = {
@@ -230,6 +237,7 @@ export default function App() {
 
     if (challenge && user) {
       const cr = toChallengeResult(res, draft);
+      if (cheat && challenge.kind === 'duel') cr.god = true;
       setMyChallengeResult(cr);
       if (challenge.kind === 'daily') {
         submitDaily(user.id, cr).catch(() => { /* offline or already played */ });

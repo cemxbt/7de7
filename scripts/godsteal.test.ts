@@ -30,4 +30,30 @@ const iGotBest = out.creatorResults.every(r => !r.blocked) &&
   out.creatorResults.map(r => r.got?.id).join() === 'op3,op4,op5';
 const theyGotWorst = out.opponentResults.every(r => r.got && ['me8', 'me9', 'me10'].includes(r.got.id));
 console.log(allBlocked && iGotBest && theyGotWorst && out.creatorFinal.length === 11 && out.opponentFinal.length === 11
-  ? 'PASS' : 'FAIL');
+  ? 'PASS steal' : 'FAIL steal');
+
+// ---- showdown rig: a god side with a much WEAKER team must still always win ----
+import { duelShowdown, type ChallengeResult, type Duel } from '../src/challenge';
+
+const resultOf = (team: PlacedPlayer[], atk: number, def: number, god?: boolean): ChallengeResult => ({
+  overall: Math.round((atk + def) / 2), champion: !god, perfect: false,
+  wins: god ? 0 : 7, losses: god ? 3 : 0, gd: god ? -9 : 15, gf: god ? 0 : 18,
+  stage: god ? 'G3' : 'CHAMP', formation: '4-3-3', mode: 'classic',
+  attack: atk, defense: def, team, god,
+});
+
+let rigged = 0;
+const TRIALS = 25;
+for (let k = 0; k < TRIALS; k++) {
+  const duel = {
+    id: `test-duel-${k}`, code: 'TEST42', seed: 'S', mode: 'classic',
+    creator: 'a', opponent: 'b',
+    // creator cheats with the weak XI and an awful campaign; opponent is far stronger
+    creator_result: resultOf(theirs, 78, 78, true),
+    opponent_result: resultOf(mine, 96, 96),
+  } as unknown as Duel;
+  const m = duelShowdown(duel);
+  if (m?.aWins) rigged++;
+}
+console.log(`showdown: god side won ${rigged}/${TRIALS}`);
+console.log(rigged === TRIALS ? 'PASS showdown' : 'FAIL showdown');
