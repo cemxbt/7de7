@@ -24,9 +24,11 @@ interface Props {
   /** secret cheat: 1st activation = infinite wildcards, 2nd = full god squad */
   cheatCode?: string;
   onCheat?: () => void;
+  /** duels: report how many slots are filled so the rival sees my progress */
+  onProgress?: (filled: number) => void;
 }
 
-export default function Draft({ lang, squads, initialGame, onSimulate, onBack, timeLimit, cheatCode, onCheat }: Props) {
+export default function Draft({ lang, squads, initialGame, onSimulate, onBack, timeLimit, cheatCode, onCheat, onProgress }: Props) {
   const [game, setGame] = useState<GameState>(initialGame);
   const [selected, setSelected] = useState<Player | null>(null);
   const [moveFrom, setMoveFrom] = useState<number | null>(null);
@@ -83,6 +85,11 @@ export default function Draft({ lang, squads, initialGame, onSimulate, onBack, t
   const { draft, current } = game;
   const almanak = draft.mode === 'almanak';
   const filledCount = draft.filled.filter(Boolean).length;
+
+  useEffect(() => {
+    onProgress?.(filledCount);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filledCount]);
   const complete = filledCount === 11;
   const hideStats = almanak && !complete;
 

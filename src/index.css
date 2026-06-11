@@ -1635,6 +1635,83 @@ body {
 
 .duel-share { text-align: center; }
 
+/* live rival presence bar (duel draft) */
+.rival-bar {
+  max-width: 980px;
+  margin: 10px auto 0;
+  padding: 8px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  background: var(--card-bg);
+  border: 1.5px solid var(--card-border);
+  border-radius: 12px;
+  font-size: 13px;
+  animation: screen-in 0.3s ease;
+}
+
+.rival-bar.waiting { border-style: dashed; color: var(--muted); }
+
+.rival-bar.joined {
+  border-color: var(--gold-border);
+  background: linear-gradient(90deg, var(--card-bg), rgba(212, 175, 55, 0.14), var(--card-bg));
+  animation: rivalJoinPulse 0.9s ease 3;
+}
+
+.rival-bar-who {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 700;
+}
+
+.rival-bar-avatar { font-size: 16px; }
+.rival-bar-text { color: var(--muted); font-weight: 600; }
+.joined-text { color: var(--gold); font-weight: 800; font-size: 14px; }
+
+.rival-bar-progress {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.rival-bar-progress i {
+  width: 9px;
+  height: 12px;
+  border-radius: 3px;
+  background: var(--line);
+  border: 1px solid var(--card-border);
+  transition: background 0.3s ease, transform 0.3s ease;
+}
+
+.rival-bar-progress i.on {
+  background: var(--green, #3aa655);
+  border-color: transparent;
+  animation: tickIn 0.3s ease;
+}
+
+.rival-bar-progress small { margin-left: 5px; font-weight: 800; color: var(--text); }
+.rival-bar-progress.center { justify-content: center; width: 100%; margin-top: 4px; }
+
+.duel-rival-live { margin-top: 4px; }
+
+@keyframes rivalJoinPulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.02); }
+}
+
+@keyframes tickIn {
+  from { transform: scale(0.4); }
+  to { transform: scale(1); }
+}
+
+@media (max-width: 520px) {
+  .rival-bar { margin: 8px 10px 0; font-size: 12px; gap: 7px; }
+  .rival-bar-progress i { width: 7px; height: 10px; }
+}
+
 /* live waiting indicator */
 .live-dot {
   display: inline-block;

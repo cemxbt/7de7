@@ -270,6 +270,7 @@ export default function DuelSync({ lang, code, side, myTeam, onContinue, onAbort
   const theirSteal = side === 'creator' ? duel?.opponent_steal : duel?.creator_steal;
   const sentSteal = mySteal ?? (side === 'creator' ? duel?.creator_steal : duel?.opponent_steal) ?? null;
   const theirSeen = side === 'creator' ? duel?.opponent_seen : duel?.creator_seen;
+  const theirLive = side === 'creator' ? duel?.opponent_live : duel?.creator_live;
   const rivalProfile = side === 'creator' ? duel?.opponent_profile : duel?.creator_profile;
   const rivalName = `${rivalProfile?.avatar ?? '⚽'} ${rivalProfile?.name || t('lbAnon', lang)}`;
   const online = seenRecently(theirSeen);
@@ -280,7 +281,9 @@ export default function DuelSync({ lang, code, side, myTeam, onContinue, onAbort
     const load = () => fetchDuel(code).then(d => { if (alive && d) setDuel(d); }).catch(() => { /* offline */ });
     load();
     const pollIv = setInterval(load, 4000);
-    const beat = () => { if (duelIdRef.current) duelHeartbeat(duelIdRef.current, side).catch(() => { /* offline */ }); };
+    const beat = () => {
+      if (duelIdRef.current) duelHeartbeat(duelIdRef.current, side, { phase: 'steal' }).catch(() => { /* offline */ });
+    };
     const beatIv = setInterval(beat, 10_000);
     return () => { alive = false; clearInterval(pollIv); clearInterval(beatIv); };
   }, [code, side]);
@@ -288,7 +291,7 @@ export default function DuelSync({ lang, code, side, myTeam, onContinue, onAbort
   useEffect(() => {
     if (duel?.id && duelIdRef.current !== duel.id) {
       duelIdRef.current = duel.id;
-      duelHeartbeat(duel.id, side).catch(() => { /* offline */ });
+      duelHeartbeat(duel.id, side, { phase: 'steal' }).catch(() => { /* offline */ });
     }
   }, [duel?.id, side]);
 
@@ -356,13 +359,28 @@ export default function DuelSync({ lang, code, side, myTeam, onContinue, onAbort
   }
 
   // phase 1: waiting for the rival's draft
+  const rivalDrafting = theirLive?.phase === 'draft';
   return (
     <main className="duelsync">
       <div className="steal-board wait-board">
         <h2>⚔️ {t('duelTitle', lang)} · {code}</h2>
         <p className="ob-desc">✅ {t('draftSent', lang)}</p>
         <p className="ob-desc">⏳ {t('draftWaitRival', lang)}</p>
-        {duel?.opponent || side === 'opponent' ? presence : (
+        {duel?.opponent || side === 'opponent' ? (
+          <>
+            {presence}
+            {rivalDrafting && (
+              <div className="duel-rival-live">
+                <p className="ob-desc">📋 {t('rivalDrafting', lang)} · <b>{theirLive?.filled ?? 0}/11</b></p>
+                <span className="rival-bar-progress center">
+                  {Array.from({ length: 11 }, (_, i) => (
+                    <i key={i} className={i < (theirLive?.filled ?? 0) ? 'on' : ''} />
+                  ))}
+                </span>
+              </div>
+            )}
+          </>
+        ) : (
           <p className="ob-desc duel-wait"><span className="live-dot" /> {t('duelLiveWait', lang)}</p>
         )}
         <button className="ghost small" onClick={onAbort}>← {t('back', lang)}</button>

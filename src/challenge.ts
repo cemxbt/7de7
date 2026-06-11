@@ -184,8 +184,16 @@ export interface Duel {
   opponent_steal?: StealPicks | null;
   creator_seen?: string | null;
   opponent_seen?: string | null;
+  creator_live?: LiveStatus | null;
+  opponent_live?: LiveStatus | null;
   creator_profile?: { name: string; avatar: string } | null;
   opponent_profile?: { name: string; avatar: string } | null;
+}
+
+/** what a duel player is doing right now, broadcast with every heartbeat */
+export interface LiveStatus {
+  phase: 'draft' | 'steal' | 'cup' | 'done';
+  filled?: number; // squad slots filled so far (draft phase)
 }
 
 const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no 0/O/1/I
@@ -329,10 +337,13 @@ export async function submitDuelSteal(duelId: string, side: DuelSide, picks: Ste
   if (error) throw error;
 }
 
-export async function duelHeartbeat(duelId: string, side: DuelSide): Promise<void> {
+export async function duelHeartbeat(duelId: string, side: DuelSide, live?: LiveStatus): Promise<void> {
   await supabase
     .from('duels')
-    .update({ [`${side}_seen`]: new Date().toISOString() })
+    .update({
+      [`${side}_seen`]: new Date().toISOString(),
+      ...(live ? { [`${side}_live`]: live } : {}),
+    })
     .eq('id', duelId);
 }
 
@@ -483,7 +494,7 @@ export async function findOpenDuel(userId: string): Promise<Duel | null> {
 export const duelLink = (code: string) => `https://cemxbt.github.io/7de7/?duel=${code}`;
 
 const DUEL_COLS = 'id,code,seed,mode,creator,creator_result,opponent,opponent_result,invite,created_at,'
-  + 'creator_draft,opponent_draft,creator_steal,opponent_steal,creator_seen,opponent_seen,'
+  + 'creator_draft,opponent_draft,creator_steal,opponent_steal,creator_seen,opponent_seen,creator_live,opponent_live,'
   + 'creator_profile:profiles!duels_creator_fkey(name,avatar),opponent_profile:profiles!duels_opponent_fkey(name,avatar)';
 
 /** All duels I created or joined, newest first. */

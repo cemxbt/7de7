@@ -1,11 +1,11 @@
 // Post-result panels for online battles (daily board + duel share/showdown)
 // and the Setup-screen online section.
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
-  compareResults, dailySeed, duelLink, duelShowdown, duelVerdict,
+  compareResults, dailySeed, duelHeartbeat, duelLink, duelShowdown, duelVerdict,
   fetchDailyBoard, fetchDuel, fetchIncomingInvites, fetchMyDuels, fetchWeeklyBoard,
-  hasPlayedDaily, hasPlayedWeekly, weeklySeed,
-  type ChallengeResult, type DailyRow, type Duel,
+  hasPlayedDaily, hasPlayedWeekly, seenRecently, weeklySeed,
+  type ChallengeResult, type DailyRow, type Duel, type DuelSide, type LiveStatus,
 } from '../challenge';
 import type { User } from '../online';
 import type { Lang, StringKey } from '../i18n';
@@ -218,6 +218,121 @@ export function BoardCard({ lang, board }: { lang: Lang; board: 'daily' | 'weekl
 
 export type DuelVariant = 'code' | 'quick' | 'invite';
 
+// ---------- live rival presence ----------
+
+/** What the rival is doing right now, derived from live status + filled columns. */
+export function rivalStatus(duel: Duel, viewer: DuelSide, lang: Lang): { icon: string; text: string; filled?: number } {
+  const result = viewer === 'creator' ? duel.opponent_result : duel.creator_result;
+  const steal = viewer === 'creator' ? duel.opponent_steal : duel.creator_steal;
+  const draft = viewer === 'creator' ? duel.opponent_draft : duel.creator_draft;
+  const live = viewer === 'creator' ? duel.opponent_live : duel.creator_live;
+
+  if (result) return { icon: '🏁', text: t('rivalFinished', lang) };
+  if (live?.phase === 'cup' || (draft && steal)) return { icon: '🏟', text: t('rivalPlayingCup', lang) };
+  if (live?.phase === 'steal' || draft) return { icon: '🕵️', text: t('rivalStealPhase', lang) };
+  if (live?.phase === 'draft') return { icon: '📋', text: t('rivalDrafting', lang), filled: live.filled ?? 0 };
+  return { icon: '🎮', text: t('rivalInLobby', lang) };
+}
+
+/**
+ * Live opponent bar shown during a duel draft: announces when the rival
+ * joins and mirrors their progress (squad slots, phase) in real time.
+ * Also broadcasts my own progress so the rival's bar stays live too.
+ */
+export function DuelRivalBar({ lang, code, side, myLive }: {
+  lang: Lang;
+  code: string;
+  side: DuelSide;
+  myLive: LiveStatus;
+}) {
+  const [duel, setDuel] = useState<Duel | null>(null);
+  const [joinFlash, setJoinFlash] = useState(false);
+  const hadRivalRef = useRef(false);
+  const myLiveRef = useRef(myLive);
+  myLiveRef.current = myLive;
+
+  // poll the duel + broadcast my own live status
+  useEffect(() => {
+    let alive = true;
+    const load = () => fetchDuel(code).then(d => { if (alive && d) setDuel(d); }).catch(() => { /* offline */ });
+    load();
+    const pollIv = setInterval(load, 4000);
+    return () => { alive = false; clearInterval(pollIv); };
+  }, [code]);
+
+  useEffect(() => {
+    if (!duel?.id) return;
+    const beat = () => duelHeartbeat(duel.id, side, myLiveRef.current).catch(() => { /* offline */ });
+    beat();
+    const iv = setInterval(beat, 6000);
+    return () => clearInterval(iv);
+  }, [duel?.id, side]);
+
+  // push progress right away when I place a player
+  useEffect(() => {
+    if (duel?.id) duelHeartbeat(duel.id, side, myLive).catch(() => { /* offline */ });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [myLive.filled, myLive.phase]);
+
+  const rival = side === 'creator' ? duel?.opponent : duel?.creator;
+  const rivalProfile = side === 'creator' ? duel?.opponent_profile : duel?.creator_profile;
+  const rivalSeen = side === 'creator' ? duel?.opponent_seen : duel?.creator_seen;
+  const rivalName = rivalProfile?.name || t('lbAnon', lang);
+
+  // celebrate the moment the rival shows up
+  useEffect(() => {
+    if (rival && !hadRivalRef.current) {
+      if (duel && side === 'creator') {
+        setJoinFlash(true);
+        setTimeout(() => setJoinFlash(false), 4000);
+      }
+      hadRivalRef.current = true;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rival]);
+
+  if (!duel) return null;
+
+  if (!rival) {
+    return (
+      <div className="rival-bar waiting">
+        <span className="live-dot" />
+        <span className="rival-bar-text">⏳ {t('rivalWaitingJoin', lang)}</span>
+      </div>
+    );
+  }
+
+  const st = rivalStatus(duel, side, lang);
+  const online = seenRecently(rivalSeen);
+
+  return (
+    <div className={`rival-bar ${joinFlash ? 'joined' : ''}`}>
+      {joinFlash ? (
+        <span className="rival-bar-text joined-text">
+          🎉 {t('rivalJoined', lang, { name: `${rivalProfile?.avatar ?? '⚽'} ${rivalName}` })}
+        </span>
+      ) : (
+        <>
+          <span className={`live-dot ${online ? '' : 'off'}`} />
+          <span className="rival-bar-who">
+            <span className="rival-bar-avatar">{rivalProfile?.avatar ?? '⚽'}</span>
+            <b>{rivalName}</b>
+          </span>
+          <span className="rival-bar-text">{st.icon} {st.text}</span>
+          {st.filled !== undefined && (
+            <span className="rival-bar-progress" title={`${st.filled}/11`}>
+              {Array.from({ length: 11 }, (_, i) => (
+                <i key={i} className={i < (st.filled ?? 0) ? 'on' : ''} />
+              ))}
+              <small>{st.filled}/11</small>
+            </span>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 /** Slim bar shown above the draft/result while playing a duel you created. */
 export function DuelCodeBar({ lang, code, variant = 'code' }: { lang: Lang; code: string; variant?: DuelVariant }) {
   const [copied, setCopied] = useState(false);
@@ -313,6 +428,15 @@ export function DuelLivePanel({ lang, code, viewer, variant = 'code', onRematch 
     return () => { alive = false; clearInterval(timer); };
   }, [code, ready]);
 
+  // keep my presence alive while I wait, so the rival sees me online & done
+  useEffect(() => {
+    if (ready || !duel?.id) return;
+    const beat = () => duelHeartbeat(duel.id, viewer, { phase: 'done' }).catch(() => { /* offline */ });
+    beat();
+    const iv = setInterval(beat, 10_000);
+    return () => clearInterval(iv);
+  }, [duel?.id, viewer, ready]);
+
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(duelLink(code));
@@ -336,20 +460,24 @@ export function DuelLivePanel({ lang, code, viewer, variant = 'code', onRematch 
   }
 
   // still waiting for the other side
-  const rivalFound = !!duel?.opponent; // quick match: someone claimed the spot and is playing now
-  const rivalName = `${duel?.opponent_profile?.avatar ?? '⚽'} ${duel?.opponent_profile?.name || t('lbAnon', lang)}`;
+  const rival = viewer === 'creator' ? duel?.opponent : duel?.creator;
+  const rivalProfile = viewer === 'creator' ? duel?.opponent_profile : duel?.creator_profile;
+  const rivalSeen = viewer === 'creator' ? duel?.opponent_seen : duel?.creator_seen;
+  const rivalName = `${rivalProfile?.avatar ?? '⚽'} ${rivalProfile?.name || t('lbAnon', lang)}`;
+  const st = duel && rival ? rivalStatus(duel, viewer, lang) : null;
+  const online = seenRecently(rivalSeen);
   return (
     <div className="card online-result duel-share">
       <h2>{variant === 'quick' ? '🎯' : '⚔️'} {t(variant === 'quick' ? 'quickTitle' : 'duelTitle', lang)} · {code}</h2>
       {viewer === 'creator' && variant === 'quick' ? (
-        rivalFound ? (
-          <p className="ob-desc quick-found">✅ {t('quickFound', lang)} <b>{rivalName}</b> — {t('quickPlaying', lang)}</p>
+        rival ? (
+          <p className="ob-desc quick-found">✅ {t('quickFound', lang)} <b>{rivalName}</b></p>
         ) : (
           <p className="ob-desc">{t('quickSearching', lang)}</p>
         )
       ) : viewer === 'creator' && variant === 'invite' ? (
         <p className="ob-desc quick-found">📨 {t('inviteSentTo', lang)} <b>{rivalName}</b></p>
-      ) : viewer === 'creator' ? (
+      ) : viewer === 'creator' && !rival ? (
         <>
           <p className="ob-desc">{t('duelShare', lang)}</p>
           <div className="duel-code">{code}</div>
@@ -357,12 +485,27 @@ export function DuelLivePanel({ lang, code, viewer, variant = 'code', onRematch 
             {copied ? `✓ ${t('copied', lang)}` : `🔗 ${t('copyLink', lang)}`}
           </button>
         </>
+      ) : null}
+      {st ? (
+        <div className="duel-rival-live">
+          <p className="ob-desc duel-wait">
+            <span className={`live-dot ${online ? '' : 'off'}`} />{' '}
+            <b>{rivalName}</b> — {st.icon} {st.text}
+            {st.filled !== undefined && <b> · {st.filled}/11</b>}
+          </p>
+          {st.filled !== undefined && (
+            <span className="rival-bar-progress center">
+              {Array.from({ length: 11 }, (_, i) => (
+                <i key={i} className={i < (st.filled ?? 0) ? 'on' : ''} />
+              ))}
+            </span>
+          )}
+        </div>
       ) : (
-        <p className="ob-desc">{t('duelWaitCreator', lang)}</p>
+        <p className="ob-desc duel-wait">
+          <span className="live-dot" /> {t('duelLiveWait', lang)}
+        </p>
       )}
-      <p className="ob-desc duel-wait">
-        <span className="live-dot" /> {t('duelLiveWait', lang)}
-      </p>
     </div>
   );
 }

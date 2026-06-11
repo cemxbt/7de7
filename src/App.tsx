@@ -20,7 +20,7 @@ import {
   submitWeekly, toChallengeResult, weeklySeed,
   type ChallengeResult, type Duel, type DuelSide, type DuelTeam, type StealOutcome,
 } from './challenge';
-import { BoardCard, DuelCodeBar, DuelLivePanel } from './components/OnlinePanels';
+import { BoardCard, DuelCodeBar, DuelLivePanel, DuelRivalBar } from './components/OnlinePanels';
 import DuelSync from './components/DuelSync';
 
 type DuelVariant = 'code' | 'quick' | 'invite';
@@ -78,6 +78,7 @@ export default function App() {
   const [myTeam, setMyTeam] = useState<DuelTeam | null>(null); // my published duel draft
   const [cheat, setCheat] = useState(false); // god-mode run: never counted anywhere
   const [godFlash, setGodFlash] = useState(false);
+  const [draftFilled, setDraftFilled] = useState(0); // broadcast to the duel rival
   const urlDuelCode = new URLSearchParams(window.location.search).get('duel') ?? '';
 
   useEffect(() => {
@@ -114,6 +115,7 @@ export default function App() {
     setMyChallengeResult(null);
     setMyTeam(null);
     setCheat(false);
+    setDraftFilled(0);
     setGame(createGame(seed, formation, style, m));
     setResult(null);
     setScreen('draft');
@@ -304,6 +306,15 @@ export default function App() {
         <DuelCodeBar lang={lang} code={challenge.code} variant={challenge.variant} />
       )}
 
+      {squads && screen === 'draft' && challenge?.kind === 'duel' && (
+        <DuelRivalBar
+          lang={lang}
+          code={challenge.code}
+          side={challenge.side}
+          myLive={{ phase: 'draft', filled: draftFilled }}
+        />
+      )}
+
       {squads && screen === 'draft' && game && (
         <Draft
           lang={lang}
@@ -314,6 +325,7 @@ export default function App() {
           timeLimit={challenge?.kind === 'duel' ? DRAFT_SECONDS : undefined}
           cheatCode={SECRET_CODE}
           onCheat={() => setCheat(true)}
+          onProgress={challenge?.kind === 'duel' ? setDraftFilled : undefined}
         />
       )}
 
