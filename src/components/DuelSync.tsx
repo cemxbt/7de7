@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { COUNTRIES } from '../data/countries';
 import {
   STEAL_N, STEAL_SECONDS, defaultPicks, duelHeartbeat, fetchDuel, finalDraftState,
-  resolveSteals, seenRecently, submitDuelSteal,
+  godPicks, resolveSteals, seenRecently, submitDuelSteal,
   type Duel, type DuelSide, type DuelTeam, type StealOutcome, type StealPicks,
 } from '../challenge';
 import { ratings } from '../game/engine';
@@ -24,6 +24,10 @@ interface Props {
   /** resolution finished: start my tournament with the final XI */
   onContinue: (outcome: StealOutcome, duel: Duel) => void;
   onAbort: () => void;
+  /** secret cheat: god mode rigs the steal phase in my favor */
+  cheatCode?: string;
+  cheat?: boolean;
+  onCheat?: () => void;
 }
 
 const flagOf = (p: PlacedPlayer) => COUNTRIES[p.sel]?.flag ?? '';
@@ -261,10 +265,13 @@ function ResolutionView({ lang, outcome, side, myTeam, rivalName, onContinue }: 
   );
 }
 
-export default function DuelSync({ lang, code, side, myTeam, onContinue, onAbort }: Props) {
+export default function DuelSync({ lang, code, side, myTeam, onContinue, onAbort, cheatCode, cheat, onCheat }: Props) {
   const [duel, setDuel] = useState<Duel | null>(null);
   const [mySteal, setMySteal] = useState<StealPicks | null>(null);
+  const [flash, setFlash] = useState<string | null>(null);
+  const [godForce, setGodForce] = useState(false); // rival's picks never arrived
   const duelIdRef = useRef<string | null>(null);
+  const godSentRef = useRef(false);
 
   const theirDraft = side === 'creator' ? duel?.opponent_draft : duel?.creator_draft;
   const theirSteal = side === 'creator' ? duel?.opponent_steal : duel?.creator_steal;
@@ -307,6 +314,45 @@ export default function DuelSync({ lang, code, side, myTeam, onContinue, onAbort
     if (duel?.id) submitDuelSteal(duel.id, side, picks).catch(() => { /* retried via poll? keep optimistic */ });
   };
 
+  // secret cheat: typing the code here arms god mode for the steal phase too
+  useEffect(() => {
+    if (!cheatCode || cheat) return;
+    let buffer = '';
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key.length !== 1 || (e.target as HTMLElement)?.tagName === 'INPUT') return;
+      buffer = (buffer + e.key.toLowerCase()).slice(-cheatCode.length);
+      if (buffer !== cheatCode) return;
+      buffer = '';
+      onCheat?.();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [cheatCode, cheat, onCheat]);
+
+  // god mode rigs the steal phase: wait for the rival's picks, then counter
+  // them — my whole XI is secretly protected (their steals bounce to my worst
+  // players) and I take their best unprotected players
+  const theirTeam = theirDraft?.team;
+  useEffect(() => {
+    if (!cheat || !theirTeam || theirSteal) return;
+    const tm = setTimeout(() => setGodForce(true), (STEAL_SECONDS + 10) * 1000);
+    return () => clearTimeout(tm);
+  }, [cheat, theirTeam, theirSteal]);
+
+  useEffect(() => {
+    if (!cheat || !theirTeam || mySteal || godSentRef.current || !duel?.id) return;
+    const already = side === 'creator' ? duel.creator_steal : duel.opponent_steal;
+    if (already) return;
+    // rival vanished: predict their timeout defaults so the duel never stalls
+    const rivalPicks = theirSteal ?? (godForce ? defaultPicks(theirTeam, myTeam.team) : null);
+    if (!rivalPicks) return;
+    godSentRef.current = true;
+    setFlash('🕵️ GOD STEAL 🕵️');
+    setTimeout(() => setFlash(null), 2000);
+    sendSteal(godPicks(myTeam.team, theirTeam, rivalPicks));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cheat, theirTeam, theirSteal, godForce, mySteal, duel?.id]);
+
   const presence = (
     <p className="ob-desc duel-wait">
       <span className={`live-dot ${online ? '' : 'off'}`} />{' '}
@@ -314,10 +360,17 @@ export default function DuelSync({ lang, code, side, myTeam, onContinue, onAbort
     </p>
   );
 
+  const flashEl = flash ? (
+    <div className="god-flash" aria-hidden="true">
+      <span>{flash}</span>
+    </div>
+  ) : null;
+
   // phase 3: both steals in -> resolution
   if (outcome && duel) {
     return (
       <main className="duelsync">
+        {flashEl}
         <ResolutionView
           lang={lang}
           outcome={outcome}
@@ -331,8 +384,9 @@ export default function DuelSync({ lang, code, side, myTeam, onContinue, onAbort
   }
 
   // phase 2: both drafts in -> steal picking (or waiting for rival's picks)
+  // (god mode skips the picker: picks are crafted once the rival's arrive)
   if (theirDraft) {
-    if (!sentSteal) {
+    if (!sentSteal && !cheat) {
       return (
         <main className="duelsync">
           <StealPicker
@@ -348,9 +402,10 @@ export default function DuelSync({ lang, code, side, myTeam, onContinue, onAbort
     }
     return (
       <main className="duelsync">
+        {flashEl}
         <div className="steal-board wait-board">
           <h2>🕵️ {t('stealTitle', lang)}</h2>
-          <p className="ob-desc">✅ {t('stealSent', lang)}</p>
+          {sentSteal && <p className="ob-desc">✅ {t('stealSent', lang)}</p>}
           {!theirSteal && <p className="ob-desc">⏳ {t('stealWaitRival', lang)}</p>}
           {presence}
         </div>

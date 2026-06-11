@@ -360,6 +360,25 @@ export function defaultPicks(mine: PlacedPlayer[], theirs: PlacedPlayer[]): Stea
   };
 }
 
+/**
+ * God-mode picks, crafted AFTER the rival's picks are known: my entire squad
+ * is secretly protected (resolveSide only caps the steal list, so an
+ * oversized ban list works) — every rival steal bounces to my worst players —
+ * and I steal their best players that they left unprotected.
+ */
+export function godPicks(mine: PlacedPlayer[], theirs: PlacedPlayer[], theirPicks: StealPicks): StealPicks {
+  const byForce = (xs: PlacedPlayer[]) => [...xs].sort((a, b) => b.f - a.f);
+  const banned = new Set(theirPicks.ban);
+  const stealable = byForce(theirs).filter(p => !banned.has(p.id));
+  // fall back to banned targets if fewer than 3 are open (they then bounce to their give list)
+  const steal = [...stealable, ...byForce(theirs)].slice(0, STEAL_N);
+  return {
+    ban: mine.map(p => p.id),
+    steal: steal.map(p => p.id),
+    give: byForce(mine).slice(-STEAL_N).map(p => p.id),
+  };
+}
+
 export interface StealResult {
   wanted: PlacedPlayer; // who was picked
   got: PlacedPlayer | null; // who actually arrives (substitute when blocked)

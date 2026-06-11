@@ -348,6 +348,9 @@ export default function App() {
           myTeam={myTeam}
           onContinue={continueDuel}
           onAbort={() => { setChallenge(null); setScreen('setup'); }}
+          cheatCode={SECRET_CODE}
+          cheat={cheat}
+          onCheat={() => setCheat(true)}
         />
       )}
 
