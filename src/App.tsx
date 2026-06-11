@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { FormationName } from './data/formations';
 import { loadSquads } from './data/loader';
-import { createGame } from './game/engine';
+import { buildGodDraft, createGame } from './game/engine';
 import { randomSeed } from './game/rng';
 import { simulateCampaign, type CampaignResult } from './game/sim';
 import type { DraftState, GameState, Mode, Squad, Style } from './game/types';
@@ -48,6 +48,11 @@ function loadStats(): Stats {
 
 type Theme = 'light' | 'dark';
 
+// Secret cheat code: type it (no input field needed) on the main menu and the
+// strongest possible XI for the selected formation appears instantly.
+// Cheat runs never touch stats, history or anything online.
+const SECRET_CODE = 'cemxbt';
+
 export default function App() {
   const [lang, setLang] = useState<Lang>(() => (localStorage.getItem('7de7-lang') as Lang) || 'en');
   const [theme, setTheme] = useState<Theme>(() => (localStorage.getItem('7de7-theme') as Theme) || 'light');
@@ -71,6 +76,8 @@ export default function App() {
   const [challenge, setChallenge] = useState<Challenge>(null);
   const [myChallengeResult, setMyChallengeResult] = useState<ChallengeResult | null>(null);
   const [myTeam, setMyTeam] = useState<DuelTeam | null>(null); // my published duel draft
+  const [cheat, setCheat] = useState(false); // god-mode run: never counted anywhere
+  const [godFlash, setGodFlash] = useState(false);
   const urlDuelCode = new URLSearchParams(window.location.search).get('duel') ?? '';
 
   useEffect(() => {
@@ -106,10 +113,35 @@ export default function App() {
     setChallenge(ch);
     setMyChallengeResult(null);
     setMyTeam(null);
+    setCheat(false);
     setGame(createGame(seed, formation, style, m));
     setResult(null);
     setScreen('draft');
   };
+
+  // secret cheat: listen for the code being typed on the main menu
+  useEffect(() => {
+    if (screen !== 'setup' || !squads) return;
+    let buffer = '';
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key.length !== 1 || (e.target as HTMLElement)?.tagName === 'INPUT') return;
+      buffer = (buffer + e.key.toLowerCase()).slice(-SECRET_CODE.length);
+      if (buffer !== SECRET_CODE) return;
+      buffer = '';
+      const draft = buildGodDraft(squads, formation, style, mode);
+      setChallenge(null);
+      setMyChallengeResult(null);
+      setMyTeam(null);
+      setCheat(true);
+      setGame({ seed: randomSeed(), rollIndex: 0, rerollNo: 0, draft, current: null, recent: [] });
+      setResult(null);
+      setGodFlash(true);
+      setTimeout(() => setGodFlash(false), 2200);
+      setScreen('draft');
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [screen, squads, formation, style, mode]);
 
   const startGame = () => launch(randomSeed(), mode, null);
   const startDaily = () => launch(dailySeed(), 'classic', { kind: 'daily' });
@@ -177,17 +209,20 @@ export default function App() {
   const runTournament = (draft: DraftState, seed: string) => {
     if (!squads) return;
     const res = simulateCampaign(draft, seed, squads);
-    const next: Stats = {
-      played: stats.played + 1,
-      titles: stats.titles + (res.champion ? 1 : 0),
-      perfect: stats.perfect + (res.perfect ? 1 : 0),
-      best: Math.max(stats.best, res.overall),
-    };
-    setStats(next);
-    localStorage.setItem('7de7-stats', JSON.stringify(next));
-    const list = pushHistory(res, draft.mode, draft.formation);
-    setHistory(list);
-    if (user && list[0]) insertCampaign(user.id, list[0]).catch(() => { /* offline */ });
+    // god-mode runs are just for fun: no stats, no history, no cloud
+    if (!cheat) {
+      const next: Stats = {
+        played: stats.played + 1,
+        titles: stats.titles + (res.champion ? 1 : 0),
+        perfect: stats.perfect + (res.perfect ? 1 : 0),
+        best: Math.max(stats.best, res.overall),
+      };
+      setStats(next);
+      localStorage.setItem('7de7-stats', JSON.stringify(next));
+      const list = pushHistory(res, draft.mode, draft.formation);
+      setHistory(list);
+      if (user && list[0]) insertCampaign(user.id, list[0]).catch(() => { /* offline */ });
+    }
 
     if (challenge && user) {
       const cr = toChallengeResult(res, draft);
@@ -340,6 +375,12 @@ export default function App() {
       </footer>
 
       {donateOpen && <Donate lang={lang} onClose={() => setDonateOpen(false)} />}
+
+      {godFlash && (
+        <div className="god-flash" aria-hidden="true">
+          <span>⚡ GOD MODE ⚡</span>
+        </div>
+      )}
     </div>
   );
 }

@@ -116,7 +116,7 @@ export default function DuelShowdown({ lang, duel, match, viewer, animate = true
   if (shownMin >= 1) feed.push({ key: 'ko', cls: 'marker', text: `⏱ ${t('kickoff', lang)}` });
 
   return (
-    <div className={`live-match showdown ${over ? (iWin ? 'sd-won' : 'sd-lost') : ''}`}>
+    <div className={`live-match showdown ${goalNow ? 'shaking' : ''} ${over ? (iWin ? 'sd-won' : 'sd-lost') : ''}`}>
       {goalNow && (
         <div className={`goal-banner ${(viewer === 'creator') !== goalNow.opp ? '' : 'opp'}`} key={`${goalNow.min}-${goalNow.player}`}>
           {(viewer === 'creator') !== goalNow.opp ? `⚽ ${t('goalBanner', lang)}` : `🥅 ${goalNow.player}`}

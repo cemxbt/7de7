@@ -234,6 +234,31 @@ export function findSquad(all: Squad[], sel: string, copa: number): Squad | unde
 }
 
 /**
+ * Secret cheat: the strongest possible XI for a formation — every slot gets
+ * the highest-rated eligible player in the pool (one entry per person).
+ */
+export function buildGodDraft(all: Squad[], formation: FormationName, style: Style, mode: Mode): DraftState {
+  const draft = createDraft(formation, style, mode);
+  const pool = modePool(all, mode);
+  const players: PlacedPlayer[] = [];
+  for (const s of pool) for (const p of s.squad) players.push({ ...p, sel: s.sel, copa: s.copa });
+  players.sort((a, b) => b.f - a.f);
+
+  const usedIds = new Set<string>();
+  const usedNames = new Set<string>(); // avoid the same person from two different cups
+  const filled = draft.slots.map(() => null as PlacedPlayer | null);
+  draft.slots.forEach((slot, i) => {
+    const best = players.find(p => !usedIds.has(p.id) && !usedNames.has(p.n) && p.pos.includes(slot.pos));
+    if (best) {
+      filled[i] = best;
+      usedIds.add(best.id);
+      usedNames.add(best.n);
+    }
+  });
+  return { ...draft, filled, usedPlayerIds: [...usedIds] };
+}
+
+/**
  * Fills the remaining slots automatically (used when a timed duel draft
  * expires): keeps rolling and placing the strongest eligible player.
  */

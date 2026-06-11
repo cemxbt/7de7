@@ -128,10 +128,10 @@ export default function Draft({ lang, squads, initialGame, onSimulate, onBack, t
           </span>
         )}
         <div className="box-ratings-inline">
-          <span className="rating-chip ovr"><b>{hideStats ? '?' : overall || '—'}</b> {t('overall', lang)}</span>
-          <span className="rating-chip atk"><b>{hideStats ? '?' : attack || '—'}</b> {t('attack', lang)}</span>
-          <span className="rating-chip def"><b>{hideStats ? '?' : defense || '—'}</b> {t('defense', lang)}</span>
-          <span className="rating-chip cnt"><b>{filledCount}</b>/11</span>
+          <span className="rating-chip ovr" key={`o${overall}`}><b>{hideStats ? '?' : overall || '—'}</b> {t('overall', lang)}</span>
+          <span className="rating-chip atk" key={`a${attack}`}><b>{hideStats ? '?' : attack || '—'}</b> {t('attack', lang)}</span>
+          <span className="rating-chip def" key={`d${defense}`}><b>{hideStats ? '?' : defense || '—'}</b> {t('defense', lang)}</span>
+          <span className="rating-chip cnt" key={`c${filledCount}`}><b>{filledCount}</b>/11</span>
         </div>
       </div>
 
@@ -179,7 +179,7 @@ export default function Draft({ lang, squads, initialGame, onSimulate, onBack, t
               </button>
             </div>
           ) : (
-            <div className="squad-panel">
+            <div className="squad-panel" key={`${current.sel}:${current.copa}:${game.rerollNo}`}>
               <div className="squad-head">
                 <span className="squad-flag">{country?.flag}</span>
                 <div className="squad-title">

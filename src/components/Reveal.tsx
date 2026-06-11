@@ -228,7 +228,7 @@ function LiveMatch({ f, lang, onDone, speed, onSpeed, auto, onStopAuto }: LivePr
   if (minute >= 1) feed.push({ key: 'ko', cls: 'marker', text: `⏱ ${t('kickoff', lang)}` });
 
   return (
-    <div className="live-match">
+    <div className={`live-match ${goalNow ? 'shaking' : ''}`}>
       {goalNow && (
         <div className={`goal-banner ${goalNow.opp ? 'opp' : ''}`} key={`${goalNow.min}-${goalNow.player}`}>
           {goalNow.opp ? `🥅 ${goalNow.player}` : `⚽ ${t('goalBanner', lang)}`}
@@ -496,17 +496,17 @@ export default function Reveal({ lang, result, draft, onPlayAgain, onDonate, foo
 
           {result.perfect ? (
             <>
-              <div className="result-icon">💎🏆</div>
+              <div className="result-icon trophy-lift"><span className="trophy-rays" aria-hidden="true" />💎🏆</div>
               <h1 className="result-title">{t('perfect', lang)}</h1>
             </>
           ) : result.champion ? (
             <>
-              <div className="result-icon">🏆</div>
+              <div className="result-icon trophy-lift"><span className="trophy-rays" aria-hidden="true" />🏆</div>
               <h1 className="result-title">{t('champion', lang)}</h1>
             </>
           ) : (
             <>
-              <div className="result-icon">☠️</div>
+              <div className="result-icon lose-drop">☠️</div>
               <h1 className="result-title">{t('eliminated', lang)}</h1>
             </>
           )}

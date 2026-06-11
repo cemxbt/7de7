@@ -46,10 +46,10 @@ export default function Pitch({ lang, draft, highlight, moveFrom, moveTargets, m
             onClick={clickable ? () => onSlotClick(i) : undefined}
             disabled={!clickable}
           >
-            <span className="disc-circle">
+            <span className="disc-circle" key={player?.id ?? 'empty'}>
               {player ? (almanak ? POS_LABEL[slot.pos][lang] : player.no || '–') : POS_LABEL[slot.pos][lang]}
             </span>
-            {player && <span className="disc-name">{player.n}</span>}
+            {player && <span className="disc-name" key={`n-${player.id}`}>{player.n}</span>}
           </button>
         );
       })}
