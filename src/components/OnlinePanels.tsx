@@ -32,9 +32,10 @@ interface OnlineSectionProps {
   onDuelJoin: (duel: Duel) => void;
   onQuickMatch: () => Promise<void>;
   onNeedLogin: () => void;
+  onHowTo?: () => void;
 }
 
-export function OnlineSection({ lang, user, initialCode, onDaily, onWeekly, onDuelCreate, onDuelJoin, onQuickMatch, onNeedLogin }: OnlineSectionProps) {
+export function OnlineSection({ lang, user, initialCode, onDaily, onWeekly, onDuelCreate, onDuelJoin, onQuickMatch, onNeedLogin, onHowTo }: OnlineSectionProps) {
   const [code, setCode] = useState(initialCode);
   const [err, setErr] = useState<string | null>(null);
   const [createErr, setCreateErr] = useState<string | null>(null);
@@ -108,7 +109,14 @@ export function OnlineSection({ lang, user, initialCode, onDaily, onWeekly, onDu
 
   return (
     <section className="card online-card">
-      <h2>{t('onlineTitle', lang)}</h2>
+      <div className="online-head-row">
+        <h2>{t('onlineTitle', lang)}</h2>
+        {onHowTo && (
+          <button className="ghost small howto-link" onClick={onHowTo}>
+            ❓ {t('howScoring', lang)}
+          </button>
+        )}
+      </div>
 
       {invites.length > 0 && (
         <div className="invite-list">

@@ -25,6 +25,7 @@ interface Props {
   onDuelJoin: (duel: Duel) => void;
   onQuickMatch: () => Promise<void>;
   onNeedLogin: () => void;
+  onHowTo: () => void;
 }
 
 const MODES: { id: Mode; icon: string; nameKey: StringKey; descKey: StringKey }[] = [
@@ -42,7 +43,7 @@ const STYLES: { id: Style; icon: string; key: StringKey }[] = [
 
 export default function Setup({
   lang, mode, setMode, formation, setFormation, style, setStyle, stats, onStart,
-  user, urlDuelCode, onDaily, onWeekly, onDuelCreate, onDuelJoin, onQuickMatch, onNeedLogin,
+  user, urlDuelCode, onDaily, onWeekly, onDuelCreate, onDuelJoin, onQuickMatch, onNeedLogin, onHowTo,
 }: Props) {
   return (
     <main className="setup">
@@ -60,6 +61,9 @@ export default function Setup({
           <li><span className="how-num">2</span>⭐ {t('how2', lang)}</li>
           <li><span className="how-num">3</span>🏆 {t('how3', lang)}</li>
         </ol>
+        <button className="ghost small howto-link" onClick={onHowTo}>
+          📖 {t('howFull', lang)}
+        </button>
       </section>
 
       <section className="card">
@@ -140,6 +144,7 @@ export default function Setup({
         onDuelJoin={onDuelJoin}
         onQuickMatch={onQuickMatch}
         onNeedLogin={onNeedLogin}
+        onHowTo={onHowTo}
       />
 
       {stats.played > 0 && (

@@ -11,6 +11,7 @@ import Setup from './components/Setup';
 import Draft from './components/Draft';
 import Reveal from './components/Reveal';
 import Donate from './components/Donate';
+import HowTo from './components/HowTo';
 import ProfileScreen from './components/ProfileScreen';
 import { loadHistory, loadProfile, pushHistory, type HistoryEntry, type Profile } from './profile';
 import { insertCampaign, supabase, syncLocalHistoryOnce, upsertCloudProfile, type User } from './online';
@@ -68,6 +69,7 @@ export default function App() {
   const [style, setStyle] = useState<Style>('balanced');
 
   const [donateOpen, setDonateOpen] = useState(false);
+  const [howOpen, setHowOpen] = useState(false);
   const [game, setGame] = useState<GameState | null>(null);
   const [result, setResult] = useState<CampaignResult | null>(null);
   const [finalDraft, setFinalDraft] = useState<DraftState | null>(null);
@@ -255,6 +257,14 @@ export default function App() {
         </button>
         <div className="topbar-controls">
           <button
+            className="theme-toggle"
+            onClick={() => setHowOpen(true)}
+            aria-label={t('howToTitle', lang)}
+            title={t('howToTitle', lang)}
+          >
+            ❓
+          </button>
+          <button
             className={`profile-btn ${screen === 'profile' ? 'on' : ''}`}
             onClick={() => setScreen(screen === 'profile' ? 'setup' : 'profile')}
             aria-label={t('profile', lang)}
@@ -298,6 +308,7 @@ export default function App() {
           onDuelJoin={startDuelJoin}
           onQuickMatch={startQuickMatch}
           onNeedLogin={() => setScreen('profile')}
+          onHowTo={() => setHowOpen(true)}
         />
       )}
 
@@ -389,6 +400,7 @@ export default function App() {
       </footer>
 
       {donateOpen && <Donate lang={lang} onClose={() => setDonateOpen(false)} />}
+      {howOpen && <HowTo lang={lang} onClose={() => setHowOpen(false)} />}
 
       {godFlash && (
         <div className="god-flash" aria-hidden="true">
